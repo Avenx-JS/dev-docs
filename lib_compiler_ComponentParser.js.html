@@ -47,13 +47,16 @@ class ComponentParser {
     }
 
     /**
-     * Parses a .component.js file and its corresponding .component.css file.
-     * @param {string} filePath - The absolute path to the .component.js file.
-     * @returns {string} The generated JavaScript class for the component.
+     * Parses a .component.js or .page.js file and its corresponding CSS file.
+     * @param {string} filePath - The absolute path to the file.
+     * @param {'component'|'page'} [type='component'] - The type of file being parsed.
+     * @returns {string} The generated JavaScript class.
      */
-    parse(filePath) {
+    parse(filePath, type = 'component') {
+        const isPage = type === 'page';
+        const suffix = isPage ? '.page.js' : '.component.js';
         const content = fs.readFileSync(filePath, 'utf-8');
-        const fileName = path.basename(filePath, '.component.js');
+        const fileName = path.basename(filePath, suffix);
         
         // Convert user-profile or user_profile to UserProfile
         const name = fileName
@@ -61,7 +64,7 @@ class ComponentParser {
             .map(part => part.charAt(0).toUpperCase() + part.slice(1))
             .join('');
 
-        const desPath = filePath.replace('.component.js', '.component.css');
+        const desPath = filePath.replace(suffix, isPage ? '.page.css' : '.component.css');
         let desBlocks = {};
 
         if (fs.existsSync(desPath)) {
@@ -73,8 +76,21 @@ class ComponentParser {
         const methods = this.extractMethods(content);
         let template = this.extractTemplate(content, desBlocks, name);
 
+        // Handle declarative tags: &lt;MyComponent /> -> &lt;div data-avenx-comp="MyComponent">&lt;/div>
+        // Only if it looks like a component (starts with uppercase)
+        template = template.replace(/&lt;([A-Z][a-zA-Z0-9]*)\s*\/>/g, '&lt;div data-avenx-comp="$1">&lt;/div>');
+
         const methodStrings = Object.entries(methods)
             .map(([k, v]) => `${k}: \`${v}\``).join(',\n        ');
+
+        if (isPage) {
+            return `
+class ${name} extends AvenxPage {
+    constructor(bridges, componentRegistry) {
+        super(${JSON.stringify(state)}, ${JSON.stringify(computed)}, bridges, \`${template}\`, { ${methodStrings} }, componentRegistry);
+    }
+}`;
+        }
 
         return `
 class ${name} extends AvenxComponent {
@@ -189,13 +205,13 @@ module.exports = ComponentParser;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 11 2026 13:17:17 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Class: ComponentParser</title>
+    <title>JSDoc: Class: AvenxRouter</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Class: ComponentParser</h1>
+    <h1 class="page-title">Class: AvenxRouter</h1>
 
     
 
@@ -28,11 +28,10 @@
 
 <header>
     
-        <h2><span class="attribs"><span class="type-signature"></span></span>ComponentParser<span class="signature">(styleProcessor)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>AvenxRouter<span class="signature">(app, routes)</span><span class="type-signature"></span></h2>
         
-            <div class="class-description"><p>ComponentParser handles the parsing of Avenx component files (.js and .css).
-It extracts component state, computed properties, methods, and templates,
-and coordinates with the StyleProcessor to handle styles.</p></div>
+            <div class="class-description"><p>AvenxRouter handles hash-based routing for the application.
+It maps URL hashes to specific Page components.</p></div>
         
     
 </header>
@@ -47,7 +46,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
     
 
     
-    <h4 class="name" id="ComponentParser"><span class="type-signature"></span>new ComponentParser<span class="signature">(styleProcessor)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="AvenxRouter"><span class="type-signature"></span>new AvenxRouter<span class="signature">(app, routes)</span><span class="type-signature"></span></h4>
     
 
     
@@ -87,13 +86,13 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
 
         <tr>
             
-                <td class="name"><code>styleProcessor</code></td>
+                <td class="name"><code>app</code></td>
             
 
             <td class="type">
             
                 
-<span class="param-type"><a href="StyleProcessor.html">StyleProcessor</a></span>
+<span class="param-type"><a href="AvenxApp.html">AvenxApp</a></span>
 
 
             
@@ -103,7 +102,30 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
 
             
 
-            <td class="description last"><p>An instance of StyleProcessor to handle styles.</p></td>
+            <td class="description last"><p>The main application instance.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>routes</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object.&lt;string, string></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>A map of hash routes to page names.</p></td>
         </tr>
 
     
@@ -144,7 +166,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line10">line 10</a>
+        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line5">line 5</a>
     </li></ul></dd>
     
 
@@ -182,6 +204,13 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
     
 
     
+        <h3 class="subsection-title">Classes</h3>
+
+        <dl>
+            <dt><a href="AvenxRouter.html">AvenxRouter</a></dt>
+            <dd></dd>
+        </dl>
+    
 
     
 
@@ -194,7 +223,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
 
         
             
-<h4 class="name" id="expressionParser"><span class="type-signature"></span>expressionParser<span class="type-signature"> :<a href="ExpressionParser.html">ExpressionParser</a></span></h4>
+<h4 class="name" id="app"><span class="type-signature"></span>app<span class="type-signature"> :<a href="AvenxApp.html">AvenxApp</a></span></h4>
 
 
 
@@ -205,7 +234,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
     <ul>
         <li>
             
-<span class="param-type"><a href="ExpressionParser.html">ExpressionParser</a></span>
+<span class="param-type"><a href="AvenxApp.html">AvenxApp</a></span>
 
 
         </li>
@@ -244,7 +273,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line18">line 18</a>
+        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line12">line 12</a>
     </li></ul></dd>
     
 
@@ -262,7 +291,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
 
         
             
-<h4 class="name" id="styleProcessor"><span class="type-signature"></span>styleProcessor<span class="type-signature"> :<a href="StyleProcessor.html">StyleProcessor</a></span></h4>
+<h4 class="name" id="routes"><span class="type-signature"></span>routes<span class="type-signature"> :Object.&lt;string, string></span></h4>
 
 
 
@@ -273,7 +302,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
     <ul>
         <li>
             
-<span class="param-type"><a href="StyleProcessor.html">StyleProcessor</a></span>
+<span class="param-type">Object.&lt;string, string></span>
 
 
         </li>
@@ -312,7 +341,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line16">line 16</a>
+        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line14">line 14</a>
     </li></ul></dd>
     
 
@@ -340,7 +369,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
     
 
     
-    <h4 class="name" id="parse"><span class="type-signature"></span>parse<span class="signature">(filePath, type<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {string}</span></h4>
+    <h4 class="name" id="navigate"><span class="type-signature"></span>navigate<span class="signature">(hash)</span><span class="type-signature"></span></h4>
     
 
     
@@ -348,7 +377,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
 
 
 <div class="description">
-    <p>Parses a .component.js or .page.js file and its corresponding CSS file.</p>
+    <p>Navigates to a specific hash route.</p>
 </div>
 
 
@@ -372,11 +401,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
         <th>Type</th>
 
         
-        <th>Attributes</th>
-        
 
-        
-        <th>Default</th>
         
 
         <th class="last">Description</th>
@@ -388,7 +413,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
 
         <tr>
             
-                <td class="name"><code>filePath</code></td>
+                <td class="name"><code>hash</code></td>
             
 
             <td class="type">
@@ -401,64 +426,10 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
             </td>
 
             
-                <td class="attributes">
-                
-
-                
-
-                
-                </td>
-            
 
             
-                <td class="default">
-                
-                </td>
-            
 
-            <td class="description last"><p>The absolute path to the file.</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>type</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">'component'</span>
-|
-
-<span class="param-type">'page'</span>
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    'component'
-                
-                </td>
-            
-
-            <td class="description last"><p>The type of file being parsed.</p></td>
+            <td class="description last"><p>The target hash (e.g., '#/about').</p></td>
         </tr>
 
     
@@ -499,7 +470,7 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line27">line 27</a>
+        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line30">line 30</a>
     </li></ul></dd>
     
 
@@ -524,28 +495,94 @@ and coordinates with the StyleProcessor to handle styles.</p></div>
 
 
 
-<h5>Returns:</h5>
+
+
+
+
 
         
-<div class="param-desc">
-    <p>The generated JavaScript class.</p>
+            
+
+    
+
+    
+    <h4 class="name" id="start"><span class="type-signature"></span>start<span class="signature">()</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Starts the router and handles the initial route.</p>
 </div>
 
 
 
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">string</span>
 
 
-    </dd>
-</dl>
+
+
+
+
+
+
+
+
+<dl class="details">
 
     
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line22">line 22</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

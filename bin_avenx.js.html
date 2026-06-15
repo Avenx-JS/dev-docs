@@ -57,6 +57,8 @@ class AvenxCLI {
             case 'g':
                 if (type === 'bridge') {
                     this.generateBridge(name);
+                } else if (type === 'page' || type === 'p') {
+                    this.generatePage(name);
                 } else {
                     // Default to component if only one arg or type is 'component'
                     this.generateComponent(name || type);
@@ -82,6 +84,7 @@ class AvenxCLI {
         console.log('🚀 Initializing new Avenx-JS project...');
         const dirs = [
             'src/components',
+            'src/pages',
             'src/global',
             'dist',
             '.vscode'
@@ -163,6 +166,44 @@ class AvenxCLI {
 
         console.log(`✅ Bridge '${capitalizedName}' generated at src/global/${lowerName}.bridge.js`);
         console.log(`ℹ️ It will be automatically registered as '${capitalizedName}' on the next build.`);
+    }
+
+    /**
+     * Generates a new Page class and template files.
+     */
+    generatePage(name) {
+        if (!name) {
+            console.error('❌ Error: Please provide a page name (e.g., avenx g page home)');
+            return;
+        }
+
+        const lowerName = name.toLowerCase();
+        const capitalizedName = lowerName
+            .split(/[-_]/)
+            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+            .join('');
+        
+        const pageDir = path.join(this.baseDir, 'src/pages');
+        if (!fs.existsSync(pageDir)) {
+            fs.mkdirSync(pageDir, { recursive: true });
+        }
+
+        const jsPath = path.join(pageDir, `${lowerName}.page.js`);
+        const cssPath = path.join(pageDir, `${lowerName}.page.css`);
+
+        if (fs.existsSync(jsPath)) {
+            console.error(`❌ Error: Page '${lowerName}' already exists.`);
+            return;
+        }
+
+        const jsTemplate = fs.readFileSync(path.join(this.frameworkDir, 'templates/page/page.js.template'), 'utf-8');
+        const cssTemplate = fs.readFileSync(path.join(this.frameworkDir, 'templates/page/page.css.template'), 'utf-8');
+
+        fs.writeFileSync(jsPath, jsTemplate.replace(/{{ name }}/g, capitalizedName));
+        fs.writeFileSync(cssPath, cssTemplate);
+
+        console.log(`✅ Page '${capitalizedName}' generated at src/pages/${lowerName}.page.js`);
+        console.log(`ℹ️ It will be automatically registered and routed if you update src/main.app.js.`);
     }
 
     /**
@@ -363,6 +404,7 @@ Usage: avenx &lt;command> [type] [name]
 Commands:
   init                      Initialize a new Avenx project structure
   generate component &lt;name> Generate a new component (alias: g)
+  generate page &lt;name>      Generate a new page (alias: g p)
   generate bridge &lt;name>    Generate a new shared reactive bridge
   build                     Build the project into dist/bundle.js
   serve [port]              Start dev server with hot-reload (default: 3000)
@@ -383,13 +425,13 @@ cli.run(command, args);
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 11 2026 13:17:17 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

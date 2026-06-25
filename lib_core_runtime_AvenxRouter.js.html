@@ -26,22 +26,29 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>/**
+            <pre class="prettyprint source linenums"><code>import { AvenxErrorCodes, formatMessage } from './AvenxError.js';
+
+/**
  * AvenxRouter handles hash-based routing for the application.
  * It maps URL hashes to specific Page components.
  */
 export class AvenxRouter {
     /**
      * @param {AvenxApp} app - The main application instance.
-     * @param {Object&lt;string, string>} routes - A map of hash routes to page names.
+     * @param {Object&lt;string, string|Object>} routes - A map of hash routes to page names or route definitions.
      */
     constructor(app, routes = {}) {
         /** @type {AvenxApp} */
         this.app = app;
-        /** @type {Object&lt;string, string>} */
+        /** @type {Object&lt;string, string|Object>} */
         this.routes = routes;
+        /** @type {Object|null} */
+        this.currentRoute = null;
+        /** @type {string|null} @private */
+        this.hashToIgnore = null;
 
-        window.addEventListener('hashchange', () => this.#handleRoute());
+        this.hashChangeHandler = () => this.#handleRoute();
+        window.addEventListener('hashchange', this.hashChangeHandler);
     }
 
     /**
@@ -60,18 +67,129 @@ export class AvenxRouter {
     }
 
     /**
-     * Handles the current route by mounting the corresponding page.
+     * Destroys the router and cleans up event listeners.
+     */
+    destroy() {
+        window.removeEventListener('hashchange', this.hashChangeHandler);
+    }
+
+    /**
+     * Sequentially executes an array of guards for a route transition.
+     * @param {Array&lt;typeof AvenxGuard|AvenxGuard>} guards - Route guards.
+     * @param {Object} to - Target route details.
+     * @param {Object|null} from - Current route details.
+     * @returns {Promise&lt;boolean|string>} Result of the guard checks (true, false, or redirect path).
+     * @private
+     */
+    #runGuards(guards, to, from) {
+        return new Promise((resolve) => {
+            const nextGuard = (index) => {
+                if (index >= guards.length) {
+                    resolve(true);
+                    return;
+                }
+                const Guard = guards[index];
+                const instance = typeof Guard === 'function' ? new Guard() : Guard;
+
+                Promise.resolve(instance.canActivate(to, from))
+                    .then(result => {
+                        if (result === false || typeof result === 'string') {
+                            resolve(result);
+                        } else {
+                            nextGuard(index + 1);
+                        }
+                    })
+                    .catch(err => {
+                        console.error(formatMessage(AvenxErrorCodes.ROUTER_GUARD_ERROR, to.hash, err));
+                        resolve(false);
+                    });
+            };
+            nextGuard(0);
+        });
+    }
+
+    /**
+     * Handles the current route by matching it against patterns, executing guards,
+     * and mounting the corresponding page.
      * @private
      */
     #handleRoute() {
-        const hash = window.location.hash || '#/';
-        const pageName = this.routes[hash] || this.routes['*'];
-        
-        if (pageName) {
-            this.app.mountPage(pageName);
-        } else {
-            console.warn(`[AvenxRouter] No route defined for hash: ${hash}`);
+        let hash = window.location.hash || '#/';
+
+        // Strip any secondary anchor (e.g. #/profile#details)
+        const secondHashIndex = hash.indexOf('#', 1);
+
+        if (secondHashIndex !== -1) {
+            hash = hash.substring(0, secondHashIndex);
         }
+
+        if (this.hashToIgnore === hash) {
+            this.hashToIgnore = null;
+            return;
+        }
+
+        let matchedRoute = null;
+        let params = {};
+
+        for (const [routePattern, routeDef] of Object.entries(this.routes)) {
+            if (routePattern === '*') continue;
+
+            const paramNames = [];
+            const regexStr = routePattern
+                .replace(/[.+^${}()|[\]\\]/g, '\\$&amp;')
+                .replace(/:([a-zA-Z0-9_$]+)/g, (_, name) => {
+                    paramNames.push(name);
+                    return '([^/]+)';
+                });
+            const regex = new RegExp(`^${regexStr}$`);
+
+            const [pathPart, queryPart] = hash.split('?');
+            const match = pathPart.match(regex);
+
+            if (match) {
+                matchedRoute = { pattern: routePattern, definition: routeDef };
+                paramNames.forEach((name, idx) => {
+                    params[name] = decodeURIComponent(match[idx + 1]);
+                });
+                if (queryPart) {
+                    const queryParams = new URLSearchParams(queryPart);
+                    params.query = Object.fromEntries(queryParams.entries());
+                }
+                break;
+            }
+        }
+
+        // Fallback to '*' if no route matched
+        if (!matchedRoute &amp;&amp; this.routes['*']) {
+            matchedRoute = { pattern: '*', definition: this.routes['*'] };
+        }
+
+        if (!matchedRoute) {
+            console.warn(`[AvenxRouter] No route defined for hash: ${hash}`);
+            return;
+        }
+
+        const def = matchedRoute.definition;
+        const pageName = typeof def === 'string' ? def : def.page;
+        const guards = typeof def === 'object' ? (def.guards || []) : [];
+
+        const to = { hash, page: pageName, params };
+        const from = this.currentRoute;
+
+        this.#runGuards(guards, to, from).then(result => {
+            if (result === false) {
+                console.warn(formatMessage(AvenxErrorCodes.ROUTER_GUARD_DENIED, to.hash));
+                if (from &amp;&amp; from.hash !== window.location.hash) {
+                    this.hashToIgnore = from.hash;
+                    window.location.hash = from.hash;
+                }
+            } else if (typeof result === 'string') {
+                this.navigate(result);
+            } else {
+                this.currentRoute = to;
+                this.app.mountPage(pageName, params);
+            }
+        });
     }
 }
 </code></pre>
@@ -84,13 +202,13 @@ export class AvenxRouter {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

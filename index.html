@@ -43,103 +43,215 @@
 
 
     <section>
-        <article><p><img src="https://raw.githubusercontent.com/Avenx-JS/.github/refs/heads/main/media/core-header.jpeg" alt="Alternativtext"></p>
+        <article><p><img src="https://raw.githubusercontent.com/Avenx-JS/.github/refs/heads/main/media/core-header.jpeg" alt="Avenx Header"></p>
 <h1>🚀 Avenx-JS</h1>
-<p>A lightweight reactive JavaScript framework with a custom compiler, scoped styling, and built-in state management.
-Avenx-JS is an experimental frontend framework designed to simplify UI development by reducing boilerplate and introducing a compiler-driven component system with reactive state, scoped CSS, and CLI tooling.</p>
+<p><strong>Avenx-JS</strong> is a lightweight, experimental frontend framework designed for simplicity and performance. It features a custom compiler-driven component system, Proxy-based reactivity, scoped CSS, and powerful CLI tooling—all with zero runtime dependencies.</p>
 <hr>
 <h2>✨ Why Avenx?</h2>
-<p>Modern frontend stacks often come with:</p>
+<p>Modern frontend development often requires complex build chains and heavy runtime libraries. Avenx explores a different path by providing:</p>
 <ul>
-<li>heavy tooling</li>
-<li>large dependency trees</li>
-<li>verbose state management</li>
-<li>framework lock-in complexity</li>
+<li><strong>⚡ Zero Boilerplate:</strong> Logic, state, and template in a single unified component file.</li>
+<li><strong>🔄 Transparent Reactivity:</strong> Automatic UI updates via JavaScript Proxies without manual <code>setState</code> or <code>ref</code> calls.</li>
+<li><strong>🎨 Scoped Styling:</strong> CSS is automatically scoped to your component using hashed class generation.</li>
+<li><strong>🛠️ Integrated Tooling:</strong> A built-in CLI handles project scaffolding, component generation, and development servers.</li>
+<li><strong>📦 Lightweight Core:</strong> Minimal runtime footprint for fast loading and execution.</li>
 </ul>
-<p>Avenx explores a different approach:</p>
-<blockquote>
-<p>Minimal setup. Reactive by default. Compiler-driven components.</p>
-</blockquote>
 <hr>
-<h2>⚡ Features</h2>
-<h3>🔄 Reactivity</h3>
-<p>State is automatically tracked and re-rendered using JavaScript Proxies.</p>
-<h3>🧩 Component System</h3>
-<p>Components combine template, logic, and state in a single <code>.component.js</code> file.</p>
-<h3>🎨 Scoped Styling</h3>
-<p>CSS is automatically scoped using hashed class generation to avoid conflicts.</p>
-<h3>🌐 Global State (Bridges)</h3>
-<p>Shared reactive state across components via <code>.bridge.js</code>.</p>
-<h3>🛠️ CLI Tooling</h3>
-<p>Built-in CLI for project scaffolding and development workflow.</p>
+<h2>⚡ Key Features</h2>
+<h3>🔄 Proxy-based Reactivity</h3>
+<p>State management is built directly into the core. Changing a property on the <code>state</code> object automatically triggers a re-render of only the affected parts of the DOM.</p>
+<h3>🧩 Declarative Components</h3>
+<p>Define your UI using standard HTML with added superpowers. Components support <code>state</code>, <code>computed</code> properties, and <code>actions</code> (methods) defined directly in the <code>.component.js</code> file.</p>
+<h3>🎨 Intelligent Scoped CSS</h3>
+<p>Styles defined in <code>.component.css</code> are automatically scoped to that specific component. Use the <code>&lt;@global&gt;</code> tag for global variables and the <code>&lt;@css&gt;</code> tag for component-specific styles.</p>
+<h3>🌐 Reactive Bridges (Shared State)</h3>
+<p>Shared state across multiple components is handled via <strong>Bridges</strong>. These are global reactive objects that any component can subscribe to and update.</p>
+<h3>🛠️ CLI-First Workflow</h3>
+<p>Generate components, pages, and bridges with a single command. The built-in dev server provides hot-reloading for a seamless development experience.</p>
 <hr>
 <h2>🚀 Quick Start</h2>
+<h3>Installation</h3>
 <pre class="prettyprint source lang-bash"><code>npm install avenx-core
-
+</code></pre>
+<h3>Scaffolding a Project</h3>
+<pre class="prettyprint source lang-bash"><code># Initialize project structure
 npx avenx init
-npx avenx g component test
-npx avenx build
+
+# Create a new component
+npx avenx g counter
+
+# Start development server
 npx avenx serve
 </code></pre>
-<p><strong>Your app will run at:</strong></p>
-<pre class="prettyprint source lang-text"><code>http://localhost:3000
-</code></pre>
+<p>Your app will be running at <code>http://localhost:3000</code>.</p>
 <hr>
-<h2>🧠 Example</h2>
-<p><strong>Component</strong></p>
-<pre class="prettyprint source lang-html"><code>&lt;state count=&quot;0&quot; />
+<h2>🧠 Core Concepts &amp; Syntax</h2>
+<h3>1. Component Structure</h3>
+<p>An Avenx component consists of two files: <code>&lt;name&gt;.component.js</code> and <code>&lt;name&gt;.component.css</code>.</p>
+<h4>JavaScript (<code>.component.js</code>)</h4>
+<pre class="prettyprint source lang-html"><code>&lt;state count=&quot;0&quot; title=&quot;Counter&quot; />
 
-&lt;h1 @click=&quot;count++&quot;>
-    Count: {{ count }}
-&lt;/h1>
+&lt;computed name=&quot;doubleCount&quot; value=&quot;count * 2&quot; />
+
+&lt;action name=&quot;increment&quot;>
+    state.count++;
+&lt;/action>
+
+&lt;div class=&quot;card&quot;>
+    &lt;h1>{{ title }}&lt;/h1>
+    &lt;p>Count: {{ count }} (Double: {{ doubleCount }})&lt;/p>
+    &lt;button @click=&quot;increment()&quot;>Increment&lt;/button>
+&lt;/div>
 </code></pre>
-<p>That's it - fully reactive UI without additional state libraries.</p>
-<p><strong>Styling</strong></p>
+<h4>CSS (<code>.component.css</code>)</h4>
 <pre class="prettyprint source lang-css"><code>&lt;@global>
-    @def primary-color #ff3e00;
+    @def primary-color #646cff;
+    @def bg-color #242424;
 &lt;/@global>
 
 &lt;@css>
-    h1 {
-        color: var(--primary-color);
-        cursor: pointer;
+    .card {
+        padding: 2rem;
+        border-radius: 8px;
+        background: var(--bg-color);
     }
 
-    h1:hover {
-        opacity: 0.8;
+    button {
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        padding: 0.6em 1.2em;
+        cursor: pointer;
     }
 &lt;/@css>
 </code></pre>
-<p><strong>Shared State (Bridges)</strong></p>
+<h3>2. Reactive Bridges (Shared State)</h3>
+<p>Bridges allow you to share reactive state between components without complex prop drilling. They are defined in the <code>src/global/</code> directory.</p>
+<h4>Creation</h4>
+<pre class="prettyprint source lang-bash"><code>npx avenx g bridge auth
+</code></pre>
+<h4>Definition (<code>src/global/auth.bridge.js</code>)</h4>
 <pre class="prettyprint source lang-javascript"><code>export default {
     isLoggedIn: false,
-    username: ''
+    user: {
+        name: 'Guest',
+        role: 'visitor'
+    }
 }
 </code></pre>
-<p><strong>Usage:</strong></p>
-<pre class="prettyprint source lang-html"><code>&lt;p>User: {{ AuthBridge.username }}&lt;/p>
+<h4>Usage in Component</h4>
+<p>Bridges are automatically available in your component templates and actions.</p>
+<pre class="prettyprint source lang-html"><code>&lt;p>Welcome, {{ AuthBridge.user.name }}&lt;/p>
+
+&lt;action name=&quot;login&quot;>
+    AuthBridge.isLoggedIn = true;
+    AuthBridge.user.name = 'John Doe';
+&lt;/action>
 </code></pre>
 <hr>
-<h2>📦 Installation</h2>
-<pre class="prettyprint source lang-bash"><code>npm install avenx-core
+<h3>3. Pages &amp; Routing</h3>
+<p>Pages are special components designed for top-level routing. They reside in <code>src/pages/</code>.</p>
+<h4>Creation</h4>
+<pre class="prettyprint source lang-bash"><code>npx avenx g page profile
+</code></pre>
+<h4>Definition (<code>src/pages/profile.page.js</code>)</h4>
+<p>Pages use the same syntax as components (<code>&lt;state&gt;</code>, <code>&lt;computed&gt;</code>, <code>&lt;action&gt;</code>).</p>
+<pre class="prettyprint source lang-html"><code>&lt;state userId=&quot;123&quot; />
+
+&lt;div class=&quot;profile-page&quot;>
+    &lt;h1>User Profile&lt;/h1>
+    &lt;p>Viewing ID: {{ userId }}&lt;/p>
+&lt;/div>
+</code></pre>
+<h4>Routing (<code>src/main.app.js</code>)</h4>
+<p>Pages are registered in the main application entry point and handled by the built-in router.</p>
+<pre class="prettyprint source lang-javascript"><code>import { AvenxApp } from 'avenx-js/runtime';
+import Home from './pages/home.page.js';
+import Profile from './pages/profile.page.js';
+
+const app = new AvenxApp({ target: '#app' });
+
+app.registerPage('Home', Home);
+app.registerPage('Profile', Profile);
+
+app.mount('Home'); // Initial page
 </code></pre>
 <hr>
-<h2>📁 Core Concept</h2>
-<p>Avenx-JS is built around 3 core ideas:</p>
-<ul>
-<li><strong>Components as unified files</strong></li>
-<li><strong>Reactivity via Proxy-based state tracking</strong></li>
-<li><strong>Compiler-driven DOM updates</strong></li>
-</ul>
+<h3>4. Nesting Components</h3>
+<p>Components can be nested by using their name in PascalCase:</p>
+<pre class="prettyprint source lang-html"><code>&lt;Navbar />
+&lt;main>
+    &lt;Sidebar />
+    &lt;Content />
+&lt;/main>
+</code></pre>
+<h3>5. Events</h3>
+<p>Use the <code>@</code> prefix to bind event listeners:</p>
+<pre class="prettyprint source lang-html"><code>&lt;button @click=&quot;count++&quot;>Inline Action&lt;/button>
+&lt;input @input=&quot;state.text = event.target.value&quot; />
+</code></pre>
+<hr>
+<h2>📁 Project Structure</h2>
+<p>A typical Avenx project looks like this:</p>
+<pre class="prettyprint source lang-text"><code>my-avenx-app/
+├── src/
+│   ├── components/       # UI Components
+│   │   └── counter/
+│   │       ├── counter.component.js
+│   │       └── counter.component.css
+│   ├── pages/            # Application Pages (Routed)
+│   ├── global/           # Shared Bridges & Styles
+│   └── main.app.js       # App entry point & registration
+├── dist/                 # Compiled bundle (generated)
+├── index.html            # Main entry HTML
+└── package.json
+</code></pre>
+<hr>
+<h2>🛠️ CLI Reference</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Command</th>
+<th style="text-align:left">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>avenx init</code></td>
+<td style="text-align:left">Scaffolds a new project structure.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>avenx g &lt;name&gt;</code></td>
+<td style="text-align:left">Generates a new component.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>avenx g p &lt;name&gt;</code></td>
+<td style="text-align:left">Generates a new page for routing.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>avenx g bridge &lt;name&gt;</code></td>
+<td style="text-align:left">Generates a new shared reactive bridge.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>avenx build</code></td>
+<td style="text-align:left">Compiles the project into <code>dist/</code>.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>avenx serve [port]</code></td>
+<td style="text-align:left">Starts the dev server with hot-reload (default: 3000).</td>
+</tr>
+</tbody>
+</table>
 <hr>
 <h2>📌 Status</h2>
 <p>This project is currently a proof-of-concept framework and actively evolving.</p>
 <hr>
 <h2>📄 License</h2>
-<p>MIT</p>
+<p>Distributed under the <strong>MIT License</strong>. See <code>LICENSE</code> for more information.</p>
 <hr>
 <h2>⭐ Support</h2>
-<p>If you find Avenx-JS useful, consider leaving a star on GitHub - it helps the project grow.</p></article>
+<p>If you like what we're building, please give us a ⭐ on <a href="https://github.com/avenx-js/avenx-js">GitHub</a>!</p>
+<p>Built with ❤️ by the Avenx Team.</p></article>
     </section>
 
 
@@ -147,16 +259,111 @@ npx avenx serve
 
 
 
+
+
+
+<section>
+
+<header>
+    
+        <h2>lib/core/runtime/AvenxError.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description"><p>Centralized error registry and formatting utilities for the Avenx-JS framework.
+Defines standard error codes (AVX_C* for compiler, AVX_R* for runtime), error templates,
+and the custom AvenxError class.</p></div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

@@ -76,9 +76,9 @@ class ComponentParser {
         const methods = this.extractMethods(content);
         let template = this.extractTemplate(content, desBlocks, name);
 
-        // Handle declarative tags: &lt;MyComponent /> -> &lt;div data-avenx-comp="MyComponent">&lt;/div>
+        // Handle declarative tags: &lt;MyComponent /> or &lt;MyComponent>...&lt;/MyComponent> -> &lt;div data-avenx-comp="MyComponent">...&lt;/div>
         // Only if it looks like a component (starts with uppercase)
-        template = template.replace(/&lt;([A-Z][a-zA-Z0-9]*)\s*\/>/g, '&lt;div data-avenx-comp="$1">&lt;/div>');
+        template = this.processComponentTags(template);
 
         const methodStrings = Object.entries(methods)
             .map(([k, v]) => `${k}: \`${v}\``).join(',\n        ');
@@ -86,16 +86,16 @@ class ComponentParser {
         if (isPage) {
             return `
 class ${name} extends AvenxPage {
-    constructor(bridges, componentRegistry) {
-        super(${JSON.stringify(state)}, ${JSON.stringify(computed)}, bridges, \`${template}\`, { ${methodStrings} }, componentRegistry);
+    constructor(bridges, componentRegistry, props) {
+        super(${JSON.stringify(state)}, ${JSON.stringify(computed)}, bridges, \`${template}\`, { ${methodStrings} }, componentRegistry, props);
     }
 }`;
         }
 
         return `
 class ${name} extends AvenxComponent {
-    constructor(bridges) {
-        super(${JSON.stringify(state)}, ${JSON.stringify(computed)}, bridges, \`${template}\`, { ${methodStrings} });
+    constructor(bridges, props) {
+        super(${JSON.stringify(state)}, ${JSON.stringify(computed)}, bridges, \`${template}\`, { ${methodStrings} }, props);
     }
 }`;
     }
@@ -107,7 +107,7 @@ class ${name} extends AvenxComponent {
      * @private
      */
     extractStylesAndVars(desContent, desBlocks) {
-        const globalMatch = desContent.match(/&lt;@global>([\s\S]*?)&lt;\/ @global>/i);
+        const globalMatch = desContent.match(/&lt;@global>([\s\S]*?)&lt;\/ ?@global>/i);
         if (globalMatch) {
             let inner = globalMatch[1];
             const defRegex = /@def\s+([\w-]+)\s+([^;]+);/g;
@@ -123,7 +123,7 @@ class ${name} extends AvenxComponent {
             }
         }
 
-        const cssBlockMatch = desContent.match(/&lt;@css>([\s\S]*?)&lt;\/ @css>/i);
+        const cssBlockMatch = desContent.match(/&lt;@css>([\s\S]*?)&lt;\/ ?@css>/i);
         if (cssBlockMatch) {
             const inner = cssBlockMatch[1];
             let depth = 0, currentName = "", currentBody = "", inBlock = false;
@@ -190,7 +190,267 @@ class ${name} extends AvenxComponent {
             .replace(/&lt;action.*?>[\s\S]*?&lt;\/action>/g, '')
             .trim();
         template = this.styleProcessor.process(template, desBlocks, name);
+        template = this.processBindDirectives(template);
+        template = this.processForLoops(template);
         return template.split('\n').filter(line => line.trim() !== '').join('\n');
+    }
+
+    /**
+     * Processes data-ax-bind attributes on input, textarea, and select elements.
+     * Converts data-ax-bind="expr" to value="{{ expr }}" and event listener.
+     * @param {string} template - The template string.
+     * @returns {string} The processed template.
+     */
+    processBindDirectives(template) {
+        const tagRegex = /&lt;(input|textarea|select)\b([^>]*?)>/gi;
+        return template.replace(tagRegex, (match, tagName, attrs) => {
+            const bindRegex = /\bdata-ax-bind\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
+            const bindMatch = attrs.match(bindRegex);
+            if (!bindMatch) {
+                return match;
+            }
+            
+            const bindExpr = (bindMatch[1] !== undefined ? bindMatch[1] : bindMatch[2]).trim();
+            let cleanAttrs = attrs.replace(bindRegex, '').trim();
+            
+            let isSelfClosing = false;
+            if (cleanAttrs.endsWith('/')) {
+                isSelfClosing = true;
+                cleanAttrs = cleanAttrs.slice(0, -1).trim();
+            }
+            
+            const eventName = tagName.toLowerCase() === 'select' ? 'change' : 'input';
+            const valueAttr = `value="{{ ${bindExpr} }}"`;
+            const eventAttr = `@${eventName}="${bindExpr} = event.target.value"`;
+            
+            const suffix = isSelfClosing ? ' />' : '>';
+            return `&lt;${tagName} ${cleanAttrs} ${valueAttr} ${eventAttr}`.trim().replace(/\s+/g, ' ') + suffix;
+        });
+    }
+
+    /**
+     * Processes &lt;@for> loops in the template, converting them to &lt;template> tags
+     * that can be handled by the runtime for efficient list rendering.
+     * @param {string} template - The HTML template string.
+     * @returns {string} The processed template.
+     * @private
+     */
+    processForLoops(template) {
+        let currentTemplate = template;
+
+        while (true) {
+            // Matches &lt;@for item in list> or &lt;@for item in list key="item.id">, or closing tag &lt;/@for> / &lt;/ @for>
+            const tagRegex = /(&lt;@for\s+(\w+)\s+in\s+([^>]+?)(?:\s+key="([^"]*)")?>)|(&lt;\/ ?@for>)/gi;
+            let match;
+            const tags = [];
+            while ((match = tagRegex.exec(currentTemplate)) !== null) {
+                if (match[1]) {
+                    tags.push({
+                        type: 'start',
+                        index: match.index,
+                        length: match[0].length,
+                        item: match[2],
+                        list: match[3],
+                        key: match[4]
+                    });
+                } else {
+                    tags.push({
+                        type: 'end',
+                        index: match.index,
+                        length: match[0].length
+                    });
+                }
+            }
+
+            if (tags.length === 0) {
+                break;
+            }
+
+            let innerPair = null;
+            const stack = [];
+            for (let i = 0; i &lt; tags.length; i++) {
+                const tag = tags[i];
+                if (tag.type === 'start') {
+                    stack.push(tag);
+                } else {
+                    const startTag = stack.pop();
+                    if (startTag) {
+                        innerPair = { start: startTag, end: tag };
+                        break; // Found innermost loop!
+                    }
+                }
+            }
+
+            if (!innerPair) {
+                console.warn("[ComponentParser] Unmatched &lt;@for> tags in template.");
+                break;
+            }
+
+            const startIdx = innerPair.start.index;
+            const endIdx = innerPair.end.index + innerPair.end.length;
+
+            const bodyStart = startIdx + innerPair.start.length;
+            const bodyEnd = innerPair.end.index;
+            const body = currentTemplate.substring(bodyStart, bodyEnd);
+
+            // Escape inner interpolation tags to prevent them from being processed
+            // by the initial template render. They will be processed per-item at runtime.
+            const escapedBody = body.replace(/\{\{/g, '{%').replace(/\}\}/g, '%}');
+            let attrs = `data-ax-for="${innerPair.start.list.trim()}" data-ax-as="${innerPair.start.item.trim()}"`;
+            if (innerPair.start.key) {
+                attrs += ` data-ax-key="${innerPair.start.key.trim()}"`;
+            }
+
+            const replacement = `&lt;template ${attrs}>${escapedBody}&lt;/template>`;
+            currentTemplate = currentTemplate.substring(0, startIdx) + replacement + currentTemplate.substring(endIdx);
+        }
+
+        return currentTemplate;
+    }
+
+    /**
+     * Processes component tags recursively to handle transclusion slots.
+     * Maps `&lt;CompName ...>...&lt;/CompName>` to `&lt;div data-avenx-comp="CompName">...&lt;/div>`.
+     * @param {string} template - The template string.
+     * @returns {string} The processed template.
+     */
+    processComponentTags(template) {
+        let currentTemplate = template;
+        
+        while (true) {
+            // Find the first occurrence of &lt; followed by an uppercase letter
+            const match = currentTemplate.match(/&lt;([A-Z][a-zA-Z0-9]*)\b/);
+            if (!match) {
+                break;
+            }
+            
+            const compName = match[1];
+            const startIndex = match.index;
+            
+            // Find the end of this opening/self-closing tag
+            let i = startIndex + 1 + compName.length;
+            let inQuote = null;
+            let isSelfClosing = false;
+            let tagEndIndex = -1;
+            
+            while (i &lt; currentTemplate.length) {
+                const char = currentTemplate[i];
+                if (inQuote) {
+                    if (char === inQuote) {
+                        inQuote = null;
+                    }
+                } else if (char === '"' || char === "'") {
+                    inQuote = char;
+                } else if (char === '>') {
+                    const trimmedBefore = currentTemplate.substring(startIndex + 1 + compName.length, i).trim();
+                    if (trimmedBefore.endsWith('/')) {
+                        isSelfClosing = true;
+                    }
+                    tagEndIndex = i + 1;
+                    break;
+                }
+                i++;
+            }
+            
+            if (tagEndIndex === -1) {
+                break; // Malformed tag, stop parsing to prevent infinite loops
+            }
+            
+            // Extract the attributes string
+            let attrsStr = currentTemplate.substring(startIndex + 1 + compName.length, tagEndIndex - 1).trim();
+            if (isSelfClosing &amp;&amp; attrsStr.endsWith('/')) {
+                attrsStr = attrsStr.slice(0, -1).trim();
+            }
+            
+            // Parse attributes
+            const props = [];
+            const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+            let attrMatch;
+            while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
+                const attrName = attrMatch[1];
+                const attrVal = attrMatch[2] !== undefined ? attrMatch[2] : attrMatch[3];
+                
+                let propExpr;
+                if (attrVal.startsWith('{{') &amp;&amp; attrVal.endsWith('}}')) {
+                    propExpr = attrVal.slice(2, -2).trim();
+                } else {
+                    const trimmed = attrVal.trim();
+                    if (trimmed === 'true' || trimmed === 'false' || trimmed === 'null' || (trimmed !== '' &amp;&amp; !isNaN(trimmed))) {
+                        propExpr = trimmed;
+                    } else {
+                        propExpr = `'${trimmed.replace(/'/g, "\\'")}'`;
+                    }
+                }
+                props.push(`data-props-${attrName}="${propExpr}"`);
+            }
+            const propsAttr = props.length > 0 ? ` ${props.join(' ')}` : '';
+            
+            if (isSelfClosing) {
+                const replacement = `&lt;div data-avenx-comp="${compName}"${propsAttr}>&lt;/div>`;
+                currentTemplate = currentTemplate.substring(0, startIndex) + replacement + currentTemplate.substring(tagEndIndex);
+            } else {
+                // Find matching closing tag &lt;/CompName>
+                let searchIndex = tagEndIndex;
+                let depth = 1;
+                let closingTagIndex = -1;
+                let closingTagLength = 0;
+                
+                while (searchIndex &lt; currentTemplate.length) {
+                    const nextOpen = currentTemplate.substring(searchIndex).match(new RegExp(`^&lt;${compName}\\b`));
+                    const nextClose = currentTemplate.substring(searchIndex).match(new RegExp(`^&lt;/\\s*${compName}\\s*>`));
+                    
+                    if (nextClose) {
+                        depth--;
+                        if (depth === 0) {
+                            closingTagIndex = searchIndex;
+                            closingTagLength = nextClose[0].length;
+                            break;
+                        }
+                        searchIndex += nextClose[0].length;
+                    } else if (nextOpen) {
+                        // Scan to end of this open tag to see if it is self-closing
+                        let tempIdx = searchIndex + nextOpen[0].length;
+                        let tempInQuote = null;
+                        let tempIsSelfClosing = false;
+                        while (tempIdx &lt; currentTemplate.length) {
+                            const tc = currentTemplate[tempIdx];
+                            if (tempInQuote) {
+                                if (tc === tempInQuote) tempInQuote = null;
+                            } else if (tc === '"' || tc === "'") {
+                                tempInQuote = tc;
+                            } else if (tc === '>') {
+                                const trimmedBefore = currentTemplate.substring(searchIndex + nextOpen[0].length, tempIdx).trim();
+                                if (trimmedBefore.endsWith('/')) {
+                                    tempIsSelfClosing = true;
+                                }
+                                tempIdx++;
+                                break;
+                            }
+                            tempIdx++;
+                        }
+                        if (!tempIsSelfClosing) {
+                            depth++;
+                        }
+                        searchIndex = tempIdx;
+                    } else {
+                        searchIndex++;
+                    }
+                }
+                
+                if (closingTagIndex === -1) {
+                    // No matching closing tag, treat as self-closing
+                    const replacement = `&lt;div data-avenx-comp="${compName}"${propsAttr}>&lt;/div>`;
+                    currentTemplate = currentTemplate.substring(0, startIndex) + replacement + currentTemplate.substring(tagEndIndex);
+                } else {
+                    const innerContent = currentTemplate.substring(tagEndIndex, closingTagIndex);
+                    // Recursively process tags inside innerContent
+                    const processedInner = this.processComponentTags(innerContent);
+                    const replacement = `&lt;div data-avenx-comp="${compName}"${propsAttr}>${processedInner}&lt;/div>`;
+                    currentTemplate = currentTemplate.substring(0, startIndex) + replacement + currentTemplate.substring(closingTagIndex + closingTagLength);
+                }
+            }
+        }
+        return currentTemplate;
     }
 }
 
@@ -205,13 +465,13 @@ module.exports = ComponentParser;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

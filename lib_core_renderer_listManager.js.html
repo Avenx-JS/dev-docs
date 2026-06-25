@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/core/renderer/listManager.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/core/renderer/listManager.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { DomPatcher } from './domPatch.js';
+
+/**
+ * Handles efficient rendering of lists by managing DOM fragments and performing keyed diffing.
+ */
+export class ListManager {
+    /**
+     * @param {DynamicEvaluator} evaluator - The expression evaluator.
+     * @param {TemplateRenderer} renderer - The template renderer.
+     */
+    constructor(evaluator, renderer) {
+        this.evaluator = evaluator;
+        this.renderer = renderer;
+        this.patcher = new DomPatcher();
+    }
+
+    /**
+     * Processes all template-based lists within a root element.
+     * @param {Element} root - The root element to search in.
+     * @param {Object} scope - The evaluation scope.
+     * @param {Object} state - The component state.
+     */
+    process(root, scope, state) {
+        const templates = root.querySelectorAll('template[data-ax-for]');
+        templates.forEach(template => {
+            let parent = template.parentNode;
+            let insideSlot = false;
+            while (parent) {
+                if (parent.nodeName === 'SLOT' &amp;&amp; parent.hasAttribute &amp;&amp; parent.hasAttribute('data-avenx-transcluded')) {
+                    insideSlot = true;
+                    break;
+                }
+                parent = parent.parentNode;
+            }
+            if (!insideSlot) {
+                this.#updateList(template, scope, state);
+            }
+        });
+    }
+
+    /**
+     * Updates a specific list based on its template and current state.
+     * @param {HTMLTemplateElement} template - The list template.
+     * @param {Object} scope - The evaluation scope.
+     * @param {Object} state - The component state.
+     * @private
+     */
+    #updateList(template, scope, state) {
+        const listExpr = template.getAttribute('data-ax-for');
+        const itemVar = template.getAttribute('data-ax-as');
+        const keyExpr = template.getAttribute('data-ax-key');
+        
+        let list;
+        try {
+            list = this.evaluator.evaluateExpression(listExpr, scope, state);
+        } catch (e) {
+            console.warn(`[ListManager] Failed to evaluate list expression: ${listExpr}`, e);
+            return;
+        }
+
+        if (!Array.isArray(list)) return;
+
+        const currentItems = this.#getCurrentItems(template);
+        const nextItems = list.map((item, index) => {
+            const itemScope = { ...scope, [itemVar]: item, index };
+            let key = index;
+            if (keyExpr) {
+                try {
+                    key = this.evaluator.evaluateExpression(keyExpr, itemScope, state);
+                } catch (e) {
+                    console.warn(`[ListManager] Failed to evaluate key expression: ${keyExpr}`, e);
+                }
+            }
+            return { item, key: String(key), itemScope };
+        });
+
+        // 1. Remove items that are no longer in the list
+        const nextKeys = new Set(nextItems.map(i => i.key));
+        for (const [key, element] of currentItems.entries()) {
+            if (!nextKeys.has(key)) {
+                element.remove();
+            }
+        }
+
+        // 2. Add or move items
+        let lastElement = template;
+        const itemTemplate = template.innerHTML.replace(/{%/g, '{{').replace(/%}/g, '}}');
+
+        nextItems.forEach(({ key, itemScope }) => {
+            let element = currentItems.get(key);
+            const html = this.renderer.render(
+                itemTemplate,
+                expr => this.evaluator.evaluateExpression(expr, itemScope, state)
+            ).trim();
+
+            if (element) {
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
+                const newElement = temp.firstElementChild;
+                if (newElement) {
+                    newElement.setAttribute('data-ax-list-item', '');
+                    newElement.setAttribute('data-ax-key-val', key);
+                    if (element.outerHTML !== newElement.outerHTML) {
+                        this.patcher.patchElement(element, newElement);
+                    }
+                }
+            } else {
+                // Create new element
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
+                element = temp.firstElementChild;
+                if (element) {
+                    element.setAttribute('data-ax-list-item', '');
+                    element.setAttribute('data-ax-key-val', key);
+                }
+            }
+            
+            if (element) {
+                // Ensure correct order
+                if (element.previousElementSibling !== lastElement) {
+                    lastElement.after(element);
+                }
+                lastElement = element;
+            }
+        });
+    }
+
+    /**
+     * Retrieves currently rendered items for a template by scanning subsequent siblings.
+     * @param {HTMLTemplateElement} template - The template.
+     * @returns {Map&lt;string, Element>}
+     * @private
+     */
+    #getCurrentItems(template) {
+        const items = new Map();
+        let current = template.nextElementSibling;
+        while (current &amp;&amp; current.hasAttribute('data-ax-list-item')) {
+            const key = current.getAttribute('data-ax-key-val');
+            items.set(key, current);
+            current = current.nextElementSibling;
+        }
+        return items;
+    }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -35,8 +35,8 @@
 export class AvenxPage extends AvenxComponent {
     /** @type {Map&lt;string, typeof AvenxComponent>} @private */
     #componentRegistry;
-    /** @type {AvenxComponent[]} @private */
-    #childComponents = [];
+    /** @type {Map&lt;Element, AvenxComponent>} @private */
+    #childComponents = new Map();
 
     /**
      * @param {Object} initialState - Initial state.
@@ -46,8 +46,8 @@ export class AvenxPage extends AvenxComponent {
      * @param {Object} methods - Component methods.
      * @param {Map&lt;string, typeof AvenxComponent>} componentRegistry - Registry of available components.
      */
-    constructor(initialState = {}, computed = {}, bridges = {}, template = '', methods = {}, componentRegistry = new Map()) {
-        super(initialState, computed, bridges, template, methods);
+    constructor(initialState = {}, computed = {}, bridges = {}, template = '', methods = {}, componentRegistry = new Map(), props = {}) {
+        super(initialState, computed, bridges, template, methods, props);
         this.#componentRegistry = componentRegistry;
     }
 
@@ -60,7 +60,20 @@ export class AvenxPage extends AvenxComponent {
     }
 
     /**
-     * Finds all mount points for child components and initializes them.
+     * Unmounts the page and all child components.
+     */
+    unmount() {
+        for (const compInstance of this.#childComponents.values()) {
+            if (typeof compInstance.unmount === 'function') {
+                compInstance.unmount();
+            }
+        }
+        this.#childComponents.clear();
+        super.unmount();
+    }
+
+    /**
+     * Finds all mount points for child components and initializes or updates them.
      * @private
      */
     #mountChildComponents() {
@@ -68,20 +81,56 @@ export class AvenxPage extends AvenxComponent {
         if (!root) return;
 
         const mountPoints = root.querySelectorAll('[data-avenx-comp]');
+        const currentElements = new Set(mountPoints);
+
+        // 1. Clean up/unmount child components whose elements are no longer in the DOM/page
+        for (const [el, compInstance] of this.#childComponents.entries()) {
+            if (!currentElements.has(el) || !root.contains(el)) {
+                if (typeof compInstance.unmount === 'function') {
+                    compInstance.unmount();
+                }
+                this.#childComponents.delete(el);
+            }
+        }
+
+        // 2. Instantiate new components or update existing ones
         mountPoints.forEach(el => {
             const compName = el.getAttribute('data-avenx-comp');
             const CompClass = this.#componentRegistry.get(compName);
             
             if (CompClass) {
-                const compInstance = new CompClass(this._getBridges());
-                compInstance.mount(el);
-                this.#childComponents.push(compInstance);
+                // Extract props from element's data-props-* attributes
+                const props = {};
+                for (const attr of el.attributes) {
+                    if (attr.name.startsWith('data-props-')) {
+                        const propName = attr.name.slice('data-props-'.length);
+                        try {
+                            props[propName] = this._evaluate(attr.value);
+                        } catch (e) {
+                            console.warn(`[AvenxPage] Failed to evaluate prop expression: ${attr.value}`, e);
+                        }
+                    }
+                }
+
+                if (this.#childComponents.has(el)) {
+                    const compInstance = this.#childComponents.get(el);
+                    if (typeof compInstance.setProps === 'function') {
+                        compInstance.setProps(props);
+                    } else if (typeof compInstance.update === 'function') {
+                        compInstance.update();
+                    }
+                } else {
+                    const compInstance = new CompClass(this._getBridges(), props);
+                    compInstance.mount(el);
+                    this.#childComponents.set(el, compInstance);
+                }
             } else {
                 console.warn(`[AvenxPage] Component '${compName}' not found in registry.`);
             }
         });
     }
 }
+
 </code></pre>
         </article>
     </section>
@@ -92,13 +141,13 @@ export class AvenxPage extends AvenxComponent {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

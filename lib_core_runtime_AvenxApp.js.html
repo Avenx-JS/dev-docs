@@ -26,7 +26,14 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>/**
+            <pre class="prettyprint source linenums"><code>import { AvenxRouter } from './AvenxRouter.js';
+import { AvenxPage } from './AvenxPage.js';
+import { AvenxComponent } from './AvenxComponent.js';
+import { AvenxError, AvenxErrorCodes } from './AvenxError.js';
+import { ProxyHandlerFactory } from '../reactive/proxyHandler.js';
+import { queueJob } from '../reactive/scheduler.js';
+
+/**
  * The main application class for Avenx.
  * Manages component registration, bridge registration, and mounting.
  */
@@ -42,6 +49,9 @@ export class AvenxApp {
      */
     constructor(config) {
         this.#target = document.querySelector(config.target);
+        if (!this.#target) {
+            throw new AvenxError(AvenxErrorCodes.MOUNT_TARGET_NOT_FOUND, config.target);
+        }
         /** @type {Map&lt;string, typeof AvenxComponent>} */
         this.components = new Map();
         /** @type {Map&lt;string, typeof AvenxPage>} */
@@ -50,6 +60,7 @@ export class AvenxApp {
         this.bridges = {};
         /** @type {AvenxRouter|null} */
         this.router = null;
+        this.updateAll = this.updateAll.bind(this);
     }
 
     /**
@@ -67,9 +78,14 @@ export class AvenxApp {
      * @param {typeof AvenxPage} pageClass - The page class.
      */
     registerPage(name, pageClass) {
+        if (this.pages.has(name)) {
+            console.warn(
+                `Page "${name}" is already registered and will be overwritten.`
+            );
+        }
+
         this.pages.set(name, pageClass);
     }
-
     /**
      * Initializes the router for the application.
      * @param {Object&lt;string, string>} routes - Route mapping.
@@ -88,7 +104,18 @@ export class AvenxApp {
      * @param {Object|Function} bridgeData - The bridge data or constructor.
      */
     registerBridge(name, bridgeData) {
-        const self = this;
+
+        if (Object.prototype.hasOwnProperty.call(this.bridges, name)) {
+            const availableBridges = Object.keys(this.bridges).join(',');
+            const suggestion = `Please use a unique name`;
+            throw new AvenxError(
+                AvenxErrorCodes.BRIDGE_ALREADY_EXISTS,
+                name,
+                availableBridges || 'none',
+                suggestion
+            );
+        }
+
         let instance = bridgeData;
 
         if (typeof bridgeData === 'function') {
@@ -99,20 +126,10 @@ export class AvenxApp {
             }
         }
 
-        const reactiveState = new Proxy(instance, {
-            set(target, key, value) {
-                target[key] = value;
-                self.updateAll();
-                return true;
-            },
-            get(target, key, receiver) {
-                const value = Reflect.get(target, key, receiver);
-                if (typeof value === 'function') {
-                    return value.bind(receiver);
-                }
-                return value;
-            }
+        const handlerFactory = new ProxyHandlerFactory({
+            onChange: () => queueJob(this.updateAll)
         });
+        const reactiveState = new Proxy(instance, handlerFactory.create());
         this.bridges[name] = reactiveState;
     }
 
@@ -126,16 +143,53 @@ export class AvenxApp {
     /**
      * Mounts a page to the main application container.
      * @param {string} name - The name of the page to mount.
+     * @param {Object} [params={}] - Dynamic route parameters to inject.
      */
-    mountPage(name) {
+    mountPage(name, params = {}) {
         const PageClass = this.pages.get(name);
-        if (PageClass &amp;&amp; this.#target) {
+        if (!PageClass) {
+            throw new AvenxError(AvenxErrorCodes.PAGE_NOT_FOUND, name);
+        }
+        if (this.#target) {
+            const activePage = this.#activeComponents[0];
+            if (activePage &amp;&amp; activePage instanceof PageClass) {
+                // Delete keys from previous params that are not in new params
+                if (activePage.params) {
+                    for (const key of Object.keys(activePage.params)) {
+                        if (!(key in params)) {
+                            delete activePage.state[key];
+                            delete activePage.params[key];
+                        }
+                    }
+                } else {
+                    activePage.params = {};
+                }
+
+                // Update or set new params
+                for (const [key, val] of Object.entries(params)) {
+                    activePage.state[key] = val;
+                    activePage.params[key] = val;
+                }
+                return;
+            }
+
             // Cleanup current components
+            this.#activeComponents.forEach(comp => {
+                if (typeof comp.unmount === 'function') {
+                    comp.unmount();
+                }
+            });
             this.#activeComponents = [];
             this.#target.innerHTML = '';
-            
+
             // Pages receive both bridges and the component registry for child mounting
             const pageInstance = new PageClass(this.bridges, this.components);
+
+            pageInstance.params = params;
+            for (const [key, val] of Object.entries(params)) {
+                pageInstance.state[key] = val;
+            }
+
             pageInstance.mount(this.#target);
             this.#activeComponents.push(pageInstance);
         }
@@ -148,12 +202,17 @@ export class AvenxApp {
      */
     mount(name, targetSelector = null) {
         const Comp = this.components.get(name);
-        const target = targetSelector ? document.querySelector(targetSelector) : this.#target;
-        if (Comp &amp;&amp; target) {
-            const compInstance = new Comp(this.bridges);
-            compInstance.mount(target);
-            this.#activeComponents.push(compInstance);
+        if (!Comp) {
+            const registeredList = Array.from(this.components.keys()).join(', ');
+            throw new AvenxError(AvenxErrorCodes.COMPONENT_NOT_FOUND, name, registeredList);
         }
+        const target = targetSelector ? document.querySelector(targetSelector) : this.#target;
+        if (!target) {
+            throw new AvenxError(AvenxErrorCodes.MOUNT_TARGET_NOT_FOUND, targetSelector || 'default target');
+        }
+        const compInstance = new Comp(this.bridges);
+        compInstance.mount(target);
+        this.#activeComponents.push(compInstance);
     }
 }
 
@@ -167,13 +226,13 @@ export class AvenxApp {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

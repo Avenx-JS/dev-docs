@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Class: EventExecutor</title>
+    <title>JSDoc: Class: ListManager</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Class: EventExecutor</h1>
+    <h1 class="page-title">Class: ListManager</h1>
 
     
 
@@ -28,9 +28,9 @@
 
 <header>
     
-        <h2><span class="attribs"><span class="type-signature"></span></span>EventExecutor<span class="signature">(runHandler)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>ListManager<span class="signature">(evaluator, renderer)</span><span class="type-signature"></span></h2>
         
-            <div class="class-description"><p>Handles the execution of event handlers.</p></div>
+            <div class="class-description"><p>Handles efficient rendering of lists by managing DOM fragments and performing keyed diffing.</p></div>
         
     
 </header>
@@ -45,7 +45,7 @@
     
 
     
-    <h4 class="name" id="EventExecutor"><span class="type-signature"></span>new EventExecutor<span class="signature">(runHandler)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="ListManager"><span class="type-signature"></span>new ListManager<span class="signature">(evaluator, renderer)</span><span class="type-signature"></span></h4>
     
 
     
@@ -85,10 +85,15 @@
 
         <tr>
             
-                <td class="name"><code>runHandler</code></td>
+                <td class="name"><code>evaluator</code></td>
             
 
             <td class="type">
+            
+                
+<span class="param-type"><a href="DynamicEvaluator.html">DynamicEvaluator</a></span>
+
+
             
             </td>
 
@@ -96,7 +101,30 @@
 
             
 
-            <td class="description last"></td>
+            <td class="description last"><p>The expression evaluator.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>renderer</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="TemplateRenderer.html">TemplateRenderer</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The template renderer.</p></td>
         </tr>
 
     
@@ -137,7 +165,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_events_eventExecutor.js.html">lib/core/events/eventExecutor.js</a>, <a href="lib_core_events_eventExecutor.js.html#line4">line 4</a>
+        <a href="lib_core_renderer_listManager.js.html">lib/core/renderer/listManager.js</a>, <a href="lib_core_renderer_listManager.js.html#line6">line 6</a>
     </li></ul></dd>
     
 
@@ -178,7 +206,7 @@
         <h3 class="subsection-title">Classes</h3>
 
         <dl>
-            <dt><a href="EventExecutor.html">EventExecutor</a></dt>
+            <dt><a href="ListManager.html">ListManager</a></dt>
             <dd></dd>
         </dl>
     
@@ -190,68 +218,6 @@
     
 
     
-        <h3 class="subsection-title">Members</h3>
-
-        
-            
-<h4 class="name" id="runHandler"><span class="type-signature"></span>runHandler<span class="type-signature"></span></h4>
-
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_events_eventExecutor.js.html">lib/core/events/eventExecutor.js</a>, <a href="lib_core_events_eventExecutor.js.html#line12">line 12</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-    
 
     
         <h3 class="subsection-title">Methods</h3>
@@ -262,7 +228,7 @@
     
 
     
-    <h4 class="name" id="execute"><span class="type-signature"></span>execute<span class="signature">(source, event<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {any}</span></h4>
+    <h4 class="name" id="process"><span class="type-signature"></span>process<span class="signature">(root, scope, state)</span><span class="type-signature"></span></h4>
     
 
     
@@ -270,7 +236,7 @@
 
 
 <div class="description">
-    <p>Executes the event handler for a given source.</p>
+    <p>Processes all template-based lists within a root element.</p>
 </div>
 
 
@@ -294,11 +260,7 @@
         <th>Type</th>
 
         
-        <th>Attributes</th>
-        
 
-        
-        <th>Default</th>
         
 
         <th class="last">Description</th>
@@ -310,77 +272,69 @@
 
         <tr>
             
-                <td class="name"><code>source</code></td>
+                <td class="name"><code>root</code></td>
             
 
             <td class="type">
             
                 
-<span class="param-type">string</span>
+<span class="param-type">Element</span>
 
 
             
             </td>
 
             
-                <td class="attributes">
-                
-
-                
-
-                
-                </td>
-            
 
             
-                <td class="default">
-                
-                </td>
-            
 
-            <td class="description last"><p>The source code or identifier for the event handler.</p></td>
+            <td class="description last"><p>The root element to search in.</p></td>
         </tr>
 
     
 
         <tr>
             
-                <td class="name"><code>event</code></td>
+                <td class="name"><code>scope</code></td>
             
 
             <td class="type">
             
                 
-<span class="param-type">Event</span>
-|
-
-<span class="param-type">null</span>
+<span class="param-type">Object</span>
 
 
             
             </td>
 
             
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
 
-                
+            
 
+            <td class="description last"><p>The evaluation scope.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>state</code></td>
+            
+
+            <td class="type">
+            
                 
-                </td>
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
             
 
             
-                <td class="default">
-                
-                    null
-                
-                </td>
-            
 
-            <td class="description last"><p>The event object, if any.</p></td>
+            <td class="description last"><p>The component state.</p></td>
         </tr>
 
     
@@ -421,7 +375,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_events_eventExecutor.js.html">lib/core/events/eventExecutor.js</a>, <a href="lib_core_events_eventExecutor.js.html#line21">line 21</a>
+        <a href="lib_core_renderer_listManager.js.html">lib/core/renderer/listManager.js</a>, <a href="lib_core_renderer_listManager.js.html#line23">line 23</a>
     </li></ul></dd>
     
 
@@ -446,28 +400,6 @@
 
 
 
-<h5>Returns:</h5>
-
-        
-<div class="param-desc">
-    <p>The result of the event handler execution.</p>
-</div>
-
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">any</span>
-
-
-    </dd>
-</dl>
-
-    
 
 
 

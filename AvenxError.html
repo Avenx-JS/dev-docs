@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Class: EventExecutor</title>
+    <title>JSDoc: Class: AvenxError</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Class: EventExecutor</h1>
+    <h1 class="page-title">Class: AvenxError</h1>
 
     
 
@@ -28,9 +28,10 @@
 
 <header>
     
-        <h2><span class="attribs"><span class="type-signature"></span></span>EventExecutor<span class="signature">(runHandler)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>AvenxError<span class="signature">(code, &hellip;args)</span><span class="type-signature"></span></h2>
         
-            <div class="class-description"><p>Handles the execution of event handlers.</p></div>
+            <div class="class-description"><p>Custom Error class representing an Avenx-JS framework error.
+Includes structured code identifiers and formatted messages.</p></div>
         
     
 </header>
@@ -45,12 +46,16 @@
     
 
     
-    <h4 class="name" id="EventExecutor"><span class="type-signature"></span>new EventExecutor<span class="signature">(runHandler)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="AvenxError"><span class="type-signature"></span>new AvenxError<span class="signature">(code, &hellip;args)</span><span class="type-signature"></span></h4>
     
 
     
 
 
+
+<div class="description">
+    <p>Creates an instance of AvenxError.</p>
+</div>
 
 
 
@@ -73,6 +78,8 @@
         <th>Type</th>
 
         
+        <th>Attributes</th>
+        
 
         
 
@@ -85,18 +92,64 @@
 
         <tr>
             
-                <td class="name"><code>runHandler</code></td>
+                <td class="name"><code>code</code></td>
             
 
             <td class="type">
             
+                
+<span class="param-type">string</span>
+
+
+            
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
-            <td class="description last"></td>
+            <td class="description last"><p>The AvenxErrorCode identifier.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>args</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">any</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                    &lt;repeatable><br>
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Arguments to format within the template message.</p></td>
         </tr>
 
     
@@ -137,7 +190,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_events_eventExecutor.js.html">lib/core/events/eventExecutor.js</a>, <a href="lib_core_events_eventExecutor.js.html#line4">line 4</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line68">line 68</a>
     </li></ul></dd>
     
 
@@ -171,6 +224,17 @@
     </div>
 
     
+        <h3 class="subsection-title">Extends</h3>
+
+        
+
+
+    <ul>
+        <li>Error</li>
+    </ul>
+
+
+    
 
     
 
@@ -178,7 +242,7 @@
         <h3 class="subsection-title">Classes</h3>
 
         <dl>
-            <dt><a href="EventExecutor.html">EventExecutor</a></dt>
+            <dt><a href="AvenxError.html">AvenxError</a></dt>
             <dd></dd>
         </dl>
     
@@ -194,199 +258,26 @@
 
         
             
-<h4 class="name" id="runHandler"><span class="type-signature"></span>runHandler<span class="type-signature"></span></h4>
+<h4 class="name" id="code"><span class="type-signature"></span>code<span class="type-signature"> :string</span></h4>
 
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_events_eventExecutor.js.html">lib/core/events/eventExecutor.js</a>, <a href="lib_core_events_eventExecutor.js.html#line12">line 12</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-    
-
-    
-        <h3 class="subsection-title">Methods</h3>
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="execute"><span class="type-signature"></span>execute<span class="signature">(source, event<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {any}</span></h4>
-    
-
-    
 
 
 
 <div class="description">
-    <p>Executes the event handler for a given source.</p>
+    <p>The unique framework error code.</p>
 </div>
 
 
 
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-        <th>Attributes</th>
-        
-
-        
-        <th>Default</th>
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
+    <h5>Type:</h5>
+    <ul>
+        <li>
             
-                <td class="name"><code>source</code></td>
-            
-
-            <td class="type">
-            
-                
 <span class="param-type">string</span>
 
 
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                </td>
-            
-
-            <td class="description last"><p>The source code or identifier for the event handler.</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>event</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Event</span>
-|
-
-<span class="param-type">null</span>
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    null
-                
-                </td>
-            
-
-            <td class="description last"><p>The event object, if any.</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
+        </li>
+    </ul>
 
 
 
@@ -421,7 +312,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_events_eventExecutor.js.html">lib/core/events/eventExecutor.js</a>, <a href="lib_core_events_eventExecutor.js.html#line21">line 21</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line84">line 84</a>
     </li></ul></dd>
     
 
@@ -437,43 +328,81 @@
 
 
 
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
         
-<div class="param-desc">
-    <p>The result of the event handler execution.</p>
+            
+<h4 class="name" id="name"><span class="type-signature"></span>name<span class="type-signature"> :string</span></h4>
+
+
+
+
+<div class="description">
+    <p>Custom name identifier for the error.</p>
 </div>
 
 
 
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">any</span>
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">string</span>
 
 
-    </dd>
-</dl>
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
 
     
 
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line89">line 89</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
 
 
 
 
         
+    
+
     
 
     

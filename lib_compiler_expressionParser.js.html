@@ -38,15 +38,37 @@ class ExpressionParser {
      */
     parseState(content) {
         const state = {};
-        const match = content.match(/&lt;state\s+(.*?)\s*\/>/);
+        const match = content.match(/&lt;state\s+([\s\S]*?)\s*\/>/);
         if (match) {
-            match[1].match(/(\w+)="([^"]*)"/g)?.forEach(pair => {
-                const [k, v] = pair.split('=');
-                const val = v.replace(/"/g, '');
-                state[k] = isNaN(val) ? val : Number(val);
-            });
+            const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+            let m;
+            while ((m = attrRegex.exec(match[1])) !== null) {
+                const k = m[1];
+                const val = m[2] !== undefined ? m[2] : m[3];
+                state[k] = this.#coerceValue(val);
+            }
         }
         return state;
+    }
+
+    /**
+     * Coerces a string value to its proper JavaScript type.
+     * @param {string} val - The raw string value.
+     * @returns {any} The coerced value.
+     * @private
+     */
+    #coerceValue(val) {
+        const trimmed = val.trim();
+        if (trimmed === 'true') return true;
+        if (trimmed === 'false') return false;
+        if (trimmed === 'null') return null;
+        if (trimmed !== '' &amp;&amp; !isNaN(trimmed)) return Number(trimmed);
+        
+        try {
+            return JSON.parse(val);
+        } catch (e) {
+            return val;
+        }
     }
 
     /**
@@ -56,10 +78,22 @@ class ExpressionParser {
      */
     parseComputed(content) {
         const computed = {};
-        const regex = /&lt;computed\s+name="(\w+)"\s+value="([^"]*)"\s*\/>/g;
+        const regex = /&lt;computed\s+([\s\S]*?)\s*\/>/g;
         let m;
         while ((m = regex.exec(content)) !== null) {
-            computed[m[1]] = m[2];
+            const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+            let attrMatch;
+            let name = null;
+            let value = null;
+            while ((attrMatch = attrRegex.exec(m[1])) !== null) {
+                const k = attrMatch[1];
+                const val = attrMatch[2] !== undefined ? attrMatch[2] : attrMatch[3];
+                if (k === 'name') name = val;
+                if (k === 'value') value = val;
+            }
+            if (name &amp;&amp; value !== null) {
+                computed[name] = value;
+            }
         }
         return computed;
     }
@@ -71,17 +105,17 @@ class ExpressionParser {
      */
     parseMethods(content) {
         const methods = {};
-        const actionRegex = /&lt;action\s+name="(\w+)">([\s\S]*?)&lt;\/action>/g;
+        const actionRegex = /&lt;action\s+name\s*=\s*(?:"(\w+)"|'(\w+)')\s*>([\s\S]*?)&lt;\/action>/g;
         let m;
         while ((m = actionRegex.exec(content)) !== null) {
-            methods[m[1]] = m[2].trim().replace(/\s+/g, ' ');
+            const name = m[1] || m[2];
+            methods[name] = m[3].trim();
         }
         return methods;
     }
 }
 
 module.exports = ExpressionParser;
-
 </code></pre>
         </article>
     </section>
@@ -92,13 +126,13 @@ module.exports = ExpressionParser;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

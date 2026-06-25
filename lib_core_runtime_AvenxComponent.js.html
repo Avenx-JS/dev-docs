@@ -34,6 +34,45 @@ import { EventBinder } from '../events/bindEvents.js';
 import { EventExecutor } from '../events/eventExecutor.js';
 import { DynamicEvaluator } from '../security/evaluator.js';
 import { LifecycleManager } from './lifecycle.js';
+import { ListManager } from '../renderer/listManager.js';
+import { AvenxErrorCodes, formatMessage } from './AvenxError.js';
+import { queueJob } from '../reactive/scheduler.js';
+
+let currentMicrotaskPromise = null;
+
+/**
+ * Processes data-ax-bind attributes on input, textarea, and select elements.
+ * Converts data-ax-bind="expr" to value="{{ expr }}" and event listener.
+ * @param {string} template - The template string.
+ * @returns {string} The processed template.
+ */
+function processBindDirectives(template) {
+    if (typeof template !== 'string') return template;
+    const tagRegex = /&lt;(input|textarea|select)\b([^>]*?)>/gi;
+    return template.replace(tagRegex, (match, tagName, attrs) => {
+        const bindRegex = /\bdata-ax-bind\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
+        const bindMatch = attrs.match(bindRegex);
+        if (!bindMatch) {
+            return match;
+        }
+        
+        const bindExpr = (bindMatch[1] !== undefined ? bindMatch[1] : bindMatch[2]).trim();
+        let cleanAttrs = attrs.replace(bindRegex, '').trim();
+        
+        let isSelfClosing = false;
+        if (cleanAttrs.endsWith('/')) {
+            isSelfClosing = true;
+            cleanAttrs = cleanAttrs.slice(0, -1).trim();
+        }
+        
+        const eventName = tagName.toLowerCase() === 'select' ? 'change' : 'input';
+        const valueAttr = `value="{{ ${bindExpr} }}"`;
+        const eventAttr = `@${eventName}="${bindExpr} = event.target.value"`;
+        
+        const suffix = isSelfClosing ? ' />' : '>';
+        return `&lt;${tagName} ${cleanAttrs} ${valueAttr} ${eventAttr}`.trim().replace(/\s+/g, ' ') + suffix;
+    });
+}
 
 /**
  * Base class for all Avenx components.
@@ -54,6 +93,8 @@ export class AvenxComponent {
     #renderer;
     /** @type {DomPatcher} @private */
     #patcher;
+    /** @type {ListManager} @private */
+    #listManager;
     /** @type {EventBinder} @private */
     #eventBinder;
     /** @type {EventExecutor} @private */
@@ -62,6 +103,21 @@ export class AvenxComponent {
     #evaluator;
     /** @type {LifecycleManager} @private */
     #lifecycle;
+    /** @type {boolean} @private */
+    #isMounted = false;
+    /** @type {Set&lt;string>} @private */
+    #evaluating = new Set();
+    /** @type {Object|null} @private */
+    #transcludedGroups = null;
+    /** @type {boolean} @private */
+    #updateQueued = false;
+    /** @type {Function} @private */
+    #updateJob = () => {
+        this.#updateQueued = false;
+        this.update();
+    };
+    /** @type {Promise|null} @private */
+    #lastUpdatedPromise = null;
 
     /**
      * @param {Object} [initialState={}] - The initial state of the component.
@@ -70,8 +126,8 @@ export class AvenxComponent {
      * @param {string} [template=''] - The HTML template string.
      * @param {Object} [methods={}] - Component methods.
      */
-    constructor(initialState = {}, computed = {}, bridges = {}, template = '', methods = {}) {
-        this.#template = template;
+    constructor(initialState = {}, computed = {}, bridges = {}, template = '', methods = {}, props = {}) {
+        this.#template = processBindDirectives(template);
         this.#bridges = bridges;
         this.#computed = new ComputedRegistry(computed);
         this.#renderer = new TemplateRenderer();
@@ -79,6 +135,7 @@ export class AvenxComponent {
         this.#eventBinder = new EventBinder();
         this.#evaluator = new DynamicEvaluator();
         this.#lifecycle = new LifecycleManager();
+        this.#listManager = new ListManager(this.#evaluator, this.#renderer);
 
         /**
          * The reactive state of the component.
@@ -86,8 +143,16 @@ export class AvenxComponent {
          */
         this.state = new StateFactory().create(initialState, {
             computedKeys: this.#computed.keys(),
-            onChange: () => this.update(),
+            onChange: () => this.scheduleUpdate(),
             getComputedValue: key => this.#evaluateComputed(key)
+        });
+
+        /**
+         * The reactive props of the component.
+         * @type {Proxy}
+         */
+        this.props = new StateFactory().create(props, {
+            onChange: () => this.scheduleUpdate()
         });
 
         this.#methods = this.#evaluator.createMethodMap(
@@ -106,7 +171,7 @@ export class AvenxComponent {
      * @private
      */
     #createScope(methods = this.#methods, extras = {}) {
-        return { ...this.state, ...methods, ...this.#bridges, ...extras };
+        return { ...this.state, ...methods, ...this.#bridges, props: this.props, ...extras };
     }
 
     /**
@@ -116,12 +181,19 @@ export class AvenxComponent {
      * @private
      */
     #evaluateComputed(key) {
+        if (this.#evaluating.has(key)) {
+            console.warn(formatMessage(AvenxErrorCodes.COMPUTED_CIRCULAR_DEPENDENCY, key));
+            return undefined;
+        }
+        this.#evaluating.add(key);
         const expression = this.#computed.get(key);
         try {
             return this.#evaluator.evaluateExpression(expression, this.#createScope(), this.state);
         } catch (error) {
-            console.warn("Avenx Computed Error:", error, "Expression:", expression);
+            console.warn(formatMessage(AvenxErrorCodes.COMPUTED_EVALUTION_FAILED, key, expression, error));
             return undefined;
+        } finally {
+            this.#evaluating.delete(key);
         }
     }
 
@@ -146,7 +218,7 @@ export class AvenxComponent {
         try {
             return this.#evaluator.executeStatement(source, this.#createScope(this.#methods, { event }), this.state);
         } catch (error) {
-            console.error("Avenx Exec Error:", error);
+            console.error(formatMessage(AvenxErrorCodes.EVENT_HANDLER_ERROR, source, error));
             return undefined;
         }
     }
@@ -159,13 +231,46 @@ export class AvenxComponent {
         return this.#renderer.render(this.#template, expression => this.#resolveTemplateExpression(expression));
     }
 
-    /**
-     * Updates the component in the DOM by re-rendering and patching.
-     */
     update() {
+        if (!currentMicrotaskPromise) {
+            currentMicrotaskPromise = Promise.resolve();
+            Promise.resolve().then(() => {
+                currentMicrotaskPromise = null;
+            });
+        }
+        if (this.#lastUpdatedPromise === currentMicrotaskPromise) {
+            return;
+        }
+        this.#lastUpdatedPromise = currentMicrotaskPromise;
+
         if (!this.#element) return;
         this.#patcher.patch(this.#element, this.render());
+
+        // Fill slots with transcluded content
+        this.#fillSlots();
+
+        this.#listManager.process(this.#element, this.#createScope(), this.state);
         this.#eventBinder.bind(this.#element, this.#eventExecutor);
+
+        if (this.#isMounted &amp;&amp; this.#element?.dispatchEvent) {
+            this.#element.dispatchEvent(
+                new CustomEvent('avenx:update')
+            );
+        }
+
+        if (this.#isMounted &amp;&amp; this.#methods.onUpdate) {
+            this.#methods.onUpdate();
+        }
+    }
+
+    /**
+     * Schedules an update to run asynchronously in a microtask.
+     * Deduplicates multiple calls to schedule.
+     */
+    scheduleUpdate() {
+        if (this.#updateQueued) return;
+        this.#updateQueued = true;
+        queueJob(this.#updateJob);
     }
 
     /**
@@ -175,6 +280,224 @@ export class AvenxComponent {
      */
     __setMountTarget(target) {
         this.#element = target;
+        if (target) {
+            target.__avenx_comp_instance = this;
+
+            // Extract transcluded children
+            const children = Array.from(target.childNodes);
+            this.#transcludedGroups = {
+                default: [],
+                named: {}
+            };
+            children.forEach(child => {
+                if (child.nodeType === 1 &amp;&amp; child.hasAttribute('slot')) {
+                    const name = child.getAttribute('slot');
+                    if (!this.#transcludedGroups.named[name]) {
+                        this.#transcludedGroups.named[name] = [];
+                    }
+                    this.#transcludedGroups.named[name].push(child);
+                } else {
+                    this.#transcludedGroups.default.push(child);
+                }
+            });
+            // Clear the mount target's inner content
+            target.innerHTML = '';
+        }
+    }
+
+    /**
+     * Fills &lt;slot> elements with transcluded child nodes.
+     * @private
+     */
+    #fillSlots() {
+        if (!this.#element || !this.#transcludedGroups) return;
+        const slots = this.#getOwnSlots();
+        slots.forEach(slotEl => {
+            const name = slotEl.getAttribute('name');
+            const nodes = name ? (this.#transcludedGroups.named[name] || []) : (this.#transcludedGroups.default || []);
+            const hasContent = nodes.some(node => {
+                if (node.nodeType === 1 &amp;&amp; node.nodeName !== '!--' &amp;&amp; node.nodeName !== '#comment') return true;
+                if (node.nodeType === 3 &amp;&amp; node.textContent.trim().length > 0) return true;
+                return false;
+            });
+            if (hasContent) {
+                // Clear default content of the slot
+                slotEl.innerHTML = '';
+                // Append the nodes
+                nodes.forEach(node => {
+                    slotEl.appendChild(node);
+                });
+                slotEl.setAttribute('data-avenx-transcluded', 'true');
+            } else {
+                slotEl.removeAttribute('data-avenx-transcluded');
+            }
+        });
+    }
+
+    /**
+     * Retrieves slot elements belonging to this component (not nested inside child components).
+     * @returns {Element[]}
+     * @private
+     */
+    #getOwnSlots() {
+        if (!this.#element) return [];
+        const slots = this.#element.querySelectorAll('slot');
+        const root = this.#element;
+        return Array.from(slots).filter(slot => {
+            let parent = slot.parentNode;
+            while (parent &amp;&amp; parent !== root) {
+                if (parent.hasAttribute &amp;&amp; parent.hasAttribute('data-avenx-comp')) {
+                    return false;
+                }
+                parent = parent.parentNode;
+            }
+            return true;
+        });
+    }
+
+    /**
+     * Updates the transcluded content when the parent template updates.
+     * @param {NodeList|Array} virtualChildNodes - The new virtual transcluded nodes from parent.
+     * @private
+     */
+    __updateTranscludedContent(virtualChildNodes) {
+        const grouped = {
+            default: [],
+            named: {}
+        };
+        Array.from(virtualChildNodes || []).forEach(node => {
+            if (node.nodeType === 1 &amp;&amp; node.hasAttribute('slot')) {
+                const name = node.getAttribute('slot');
+                if (!grouped.named[name]) {
+                    grouped.named[name] = [];
+                }
+                grouped.named[name].push(node);
+            } else {
+                grouped.default.push(node);
+            }
+        });
+
+        this.#transcludedGroups = grouped;
+
+        // Patch the slots in the DOM recursively with new virtual transcluded children
+        if (this.#element) {
+            const slots = this.#getOwnSlots();
+            slots.forEach(slotEl => {
+                const name = slotEl.getAttribute('name');
+                const newChildren = name ? (grouped.named[name] || []) : (grouped.default || []);
+
+                const newSlotWrapper = slotEl.cloneNode(false);
+                newChildren.forEach(child => {
+                    newSlotWrapper.appendChild(child.cloneNode(true));
+                });
+
+                const hasContent = newChildren.some(node => {
+                    if (node.nodeType === 1 &amp;&amp; node.nodeName !== '!--' &amp;&amp; node.nodeName !== '#comment') return true;
+                    if (node.nodeType === 3 &amp;&amp; node.textContent.trim().length > 0) return true;
+                    return false;
+                });
+
+                if (hasContent) {
+                    newSlotWrapper.setAttribute('data-avenx-transcluded', 'true');
+                } else {
+                    newSlotWrapper.removeAttribute('data-avenx-transcluded');
+                    // Restore default content from the template
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(this.render(), 'text/html');
+                        const rootDoc = doc.body || doc;
+                        const defaultSlot = Array.from(rootDoc.querySelectorAll('slot')).find(s => {
+                            const sName = s.getAttribute('name');
+                            return name ? (sName === name) : !sName;
+                        });
+                        if (defaultSlot) {
+                            Array.from(defaultSlot.childNodes).forEach(child => {
+                                newSlotWrapper.appendChild(child.cloneNode(true));
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('[AvenxComponent] Failed to restore default slot content', e);
+                    }
+                }
+
+                // Patch the slot element in-place
+                this.#patcher.patchElement(slotEl, newSlotWrapper);
+            });
+        }
+    }
+
+    /**
+     * Internal method called after the component is mounted to the DOM.
+     * @private
+     */
+    __afterMount() {
+        this.#isMounted = true;
+
+        if (this.#element?.dispatchEvent) {
+            this.#element.dispatchEvent(
+                new CustomEvent('avenx:mount')
+            );
+        }
+
+        if (this.#methods.onMount) {
+            this.#methods.onMount();
+        }
+    }
+
+    /**
+     * Unmounts the component and triggers cleanup.
+     */
+    unmount() {
+        this.#eventBinder.unbind(this.#element);
+        if (this.#element?.dispatchEvent) {
+            this.#element.dispatchEvent(
+                new CustomEvent('avenx:unmount')
+            );
+        }
+
+        if (this.#methods.onUnmount) {
+            this.#methods.onUnmount();
+        }
+
+        if (this.#element) {
+            this.#element.innerHTML = '';
+        }
+
+        this.#isMounted = false;
+    }
+
+    /**
+     * Updates the component's props and triggers an update if they changed.
+     * @param {Object} newProps - The new props to apply.
+     */
+    setProps(newProps) {
+        let changed = false;
+        const currentProps = this.props;
+        
+        for (const key of Object.keys(newProps)) {
+            if (currentProps[key] !== newProps[key]) {
+                currentProps[key] = newProps[key];
+                changed = true;
+            }
+        }
+        
+        for (const key of Object.keys(currentProps)) {
+            if (!(key in newProps)) {
+                delete currentProps[key];
+                changed = true;
+            }
+        }
+    }
+
+    /**
+     * Evaluates an expression in the component's scope.
+     * @param {string} expression - The expression to evaluate.
+     * @param {Object} [extraScope={}] - Additional scope variables.
+     * @returns {any} The result of the evaluation.
+     * @protected
+     */
+    _evaluate(expression, extraScope = {}) {
+        return this.#evaluator.evaluateExpression(expression, this.#createScope(this.#methods, extraScope), this.state);
     }
 
     /**
@@ -211,13 +534,13 @@ export class AvenxComponent {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

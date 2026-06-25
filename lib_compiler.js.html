@@ -31,6 +31,20 @@ const path = require('path');
 const StyleProcessor = require('./compiler/StyleProcessor');
 const ComponentParser = require('./compiler/ComponentParser');
 
+const AvenxCompilerErrors = {
+    AVX_C01: 'Could not create dist directory at "{0}".',
+    AVX_C02: '"src" directory not found at "{0}". Run "avenx init" to scaffold a project.'
+};
+
+function formatCompilerError(code, ...args) {
+    let message = AvenxCompilerErrors[code] || 'An unknown compiler error occurred.';
+    args.forEach((arg, idx) => {
+        message = message.replace(`{${idx}}`, String(arg));
+    });
+    return `[${code}] ${message}`;
+}
+
+
 /**
  * AvenxCompiler is the main orchestrator for the Avenx-JS build process.
  * It coordinates the parsing of components, processing of styles, and the
@@ -84,7 +98,7 @@ class AvenxCompiler {
             try {
                 fs.mkdirSync(this.distDir, { recursive: true });
             } catch (e) {
-                console.error(`❌ Error: Could not create dist directory at ${this.distDir}`);
+                console.error(`❌ ${formatCompilerError('AVX_C01', this.distDir)}`);
             }
         }
     }
@@ -97,7 +111,7 @@ class AvenxCompiler {
         console.log("--- Avenx-JS Compiler ---");
         
         if (!fs.existsSync(this.srcDir)) {
-            console.error(`❌ Error: 'src' directory not found at ${this.srcDir}. Run 'avenx init' to scaffold a project.`);
+            console.error(`❌ ${formatCompilerError('AVX_C02', this.srcDir)}`);
             return;
         }
 
@@ -106,9 +120,11 @@ class AvenxCompiler {
 
         let bundleJs = this.getRuntime();
         const bridgeData = this.processBridges();
+        bundleJs += this.processGuards();
         bundleJs += this.processComponents();
-        bundleJs += this.processPages();
-        bundleJs += this.processMain(bridgeData.registrations);
+        const pageData = this.processPages();
+        bundleJs += pageData.pagesJs;
+        bundleJs += this.processMain((bridgeData.registrations || '') + '\n' + (pageData.registrations || ''));
 
         fs.writeFileSync(path.join(this.distDir, 'bundle.js'), bundleJs);
         fs.writeFileSync(path.join(this.distDir, 'bundle.css'), this.styleProcessor.getGlobalStyles());
@@ -125,18 +141,22 @@ class AvenxCompiler {
      */
     getRuntime() {
         const runtimeFiles = [
+            'runtime/AvenxError.js',
             'security/evaluator.js',
+            'security/escapeHtml.js',
             'reactive/proxyHandler.js',
             'reactive/createState.js',
             'reactive/createComputed.js',
             'renderer/renderTemplate.js',
             'renderer/domPatch.js',
+            'renderer/listManager.js',
             'events/eventExecutor.js',
             'events/bindEvents.js',
             'runtime/lifecycle.js',
             'runtime/AvenxBridge.js',
             'runtime/AvenxComponent.js',
             'runtime/AvenxPage.js',
+            'runtime/AvenxGuard.js',
             'runtime/AvenxRouter.js',
             'runtime/AvenxApp.js'
         ];
@@ -178,6 +198,47 @@ class AvenxCompiler {
     }
 
     /**
+     * Processes guard classes from the global and guards directories.
+     * @returns {string} The concatenated guard source code.
+     * @private
+     */
+    processGuards() {
+        const globalDir = path.join(this.srcDir, 'global');
+        const guardsDir = path.join(this.srcDir, 'guards');
+        let guardsJs = "";
+
+        const processFile = (dir, file) => {
+            const name = path.basename(file, '.guard.js');
+            const capitalizedName = name.split(/[-_]/).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join("") + "Guard";
+            
+            console.log(`[Guard] ${capitalizedName}`);
+            const content = fs.readFileSync(path.join(dir, file), 'utf-8');
+            const cleaned = content
+                .replace(/^import\s+.*?;\s*$/gm, '')
+                .replace(/import\s+.*?\s+from\s+['"].*?['"];?/gm, '')
+                .replace(/export\s+default\s+/g, '')
+                .replace(/export\s+/g, '');
+            guardsJs += `\n${cleaned}\n`;
+        };
+
+        if (fs.existsSync(globalDir)) {
+            fs.readdirSync(globalDir).forEach(file => {
+                if (file.endsWith('.guard.js')) {
+                    processFile(globalDir, file);
+                }
+            });
+        }
+        if (fs.existsSync(guardsDir)) {
+            fs.readdirSync(guardsDir).forEach(file => {
+                if (file.endsWith('.guard.js')) {
+                    processFile(guardsDir, file);
+                }
+            });
+        }
+        return guardsJs;
+    }
+
+    /**
      * Processes all components in the src/components folder recursively.
      * @returns {string} The concatenated source code of all compiled components.
      * @private
@@ -205,11 +266,12 @@ class AvenxCompiler {
 
     /**
      * Processes all pages in the src/pages folder recursively.
-     * @returns {string} The concatenated source code of all compiled pages.
+     * @returns {{pagesJs: string, registrations: string}} The compiled pages code and their registrations.
      * @private
      */
     processPages() {
         let pagesJs = "";
+        let registrations = "";
         const pageDir = path.join(this.srcDir, 'pages');
         
         const scan = (dir) => {
@@ -222,30 +284,30 @@ class AvenxCompiler {
                     console.log(`[Compiling Page] ${file}`);
                     const name = path.basename(file, '.page.js').split(/[-_]/).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join("");
                     pagesJs += this.componentParser.parse(fullPath, 'page');
-                    pagesJs += `app.registerPage('${name}', ${name});\n`;
+                    registrations += `app.registerPage('${name}', ${name});\n`;
                 }
             });
         };
 
         scan(pageDir);
-        return pagesJs;
+        return { pagesJs, registrations };
     }
 
     /**
      * Processes the main application entry point.
-     * @param {string} bridgeRegistrations - The bridge registration code to inject.
+     * @param {string} registrations - The bridge and page registration code to inject.
      * @returns {string} The wrapped main application code.
      * @private
      */
-    processMain(bridgeRegistrations) {
+    processMain(registrations) {
         const mainFile = path.join(this.srcDir, 'main.app.js');
         if (fs.existsSync(mainFile)) {
             let main = fs.readFileSync(mainFile, 'utf-8')
                 .replace(/import\s*{\s*AvenxApp\s*}\s*from\s*['"].*?['"];?/g, '') 
                 .replace(/import\s+.*?\s+from\s+['"].*?['"];?/gm, ''); 
             
-            if (bridgeRegistrations) {
-                main = main.replace(/(const\s+app\s+=\s+new\s+AvenxApp\([\s\S]*?\);)/, `$1\n${bridgeRegistrations}`);
+            if (registrations) {
+                main = main.replace(/(const\s+app\s+=\s+new\s+AvenxApp\([\s\S]*?\);)/, `$1\n${registrations}`);
             }
             return `\n(function(){\n${main}\n})();`;
         }
@@ -264,13 +326,13 @@ module.exports = AvenxCompiler;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Jun 15 2026 13:03:55 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
 </footer>
 
 <script> prettyPrint(); </script>

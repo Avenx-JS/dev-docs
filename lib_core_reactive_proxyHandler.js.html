@@ -27,22 +27,28 @@
     <section>
         <article>
             <pre class="prettyprint source linenums"><code>/**
- * Factory for creating proxy handlers used in reactive state.
+ * @file proxyHandler.js
+ * @description Factory for creating proxy handlers used in reactive state.
  * Handles normal property access and computed property redirection.
  */
 
+import { track, trigger, parentMap, AvenxWatcher, depMap, setDebugReactivity, isDebugReactivityEnabled } from './watcher.js';
+
+export { setDebugReactivity, isDebugReactivityEnabled };
 export const RAW_SYMBOL = Symbol('raw');
+export const IS_REACTIVE_PROXY = Symbol('avenx.reactive.proxy');
+export const PROXY_REF_SYMBOL = Symbol.for('__avenx_proxy_ref__');
 
 const mutatingArrayMethods = new Set([
-    'push',
-    'pop',
-    'shift',
-    'unshift',
-    'splice',
-    'sort',
-    'reverse',
-    'copyWithin',
-    'fill'
+  'push',
+  'pop',
+  'shift',
+  'unshift',
+  'splice',
+  'sort',
+  'reverse',
+  'copyWithin',
+  'fill',
 ]);
 
 /**
@@ -50,321 +56,701 @@ const mutatingArrayMethods = new Set([
  * We restrict this to plain objects and arrays to avoid issues with
  * built-in classes (Date, RegExp, Map, Set, Promise) and custom class
  * instances that may contain private fields or internal slots.
- * 
  * @param {any} value - The value to check.
  * @returns {boolean} True if the value should be reactive, false otherwise.
  */
 export function isReactiveTarget(value) {
-    if (value === null || typeof value !== 'object') {
-        return false;
-    }
-    const proto = Object.getPrototypeOf(value);
-    return proto === null || proto === Object.prototype || proto === Array.prototype;
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return (
+    proto === null ||
+    proto === Object.prototype ||
+    proto === Array.prototype ||
+    value instanceof Set ||
+    value instanceof Map
+  );
 }
 
-// Global context for active computed evaluations
-let activeComputedKey = null;
-const evaluationStack = [];
+/**
+ * Recursively cleans up parentMap entries for a detached reactive target and its nested properties.
+ * @param {any} value
+ * @param {Set&lt;any>} [seen]
+ */
+export function cleanupParentMap(value, seen = new Set()) {
+  if (value === null || typeof value !== 'object') {
+    return;
+  }
+  const rawValue = value[RAW_SYMBOL] || value;
+  if (seen.has(rawValue)) {
+    return;
+  }
+  seen.add(rawValue);
 
-// WeakMap tracking raw target to Map of keys to Set of activeComputedKeys depending on them
-const depMap = new WeakMap();
+  if (parentMap.has(rawValue)) {
+    parentMap.delete(rawValue);
+  }
 
-// WeakMap tracking child target to { parentTarget, parentKey } relationship
-const parentMap = new WeakMap();
-
-function track(target, key) {
-    if (activeComputedKey) {
-        let keysMap = depMap.get(target);
-        if (!keysMap) {
-            keysMap = new Map();
-            depMap.set(target, keysMap);
-        }
-        let computedKeys = keysMap.get(key);
-        if (!computedKeys) {
-            computedKeys = new Set();
-            keysMap.set(key, computedKeys);
-        }
-        computedKeys.add(activeComputedKey);
+  if (rawValue instanceof Map) {
+    for (const val of rawValue.values()) {
+      cleanupParentMap(val, seen);
     }
+  } else if (rawValue instanceof Set) {
+    for (const val of rawValue.values()) {
+      cleanupParentMap(val, seen);
+    }
+  } else if (Array.isArray(rawValue)) {
+    for (let i = 0; i &lt; rawValue.length; i++) {
+      cleanupParentMap(rawValue[i], seen);
+    }
+  } else {
+    // Plain object
+    for (const val of Object.values(rawValue)) {
+      cleanupParentMap(val, seen);
+    }
+  }
 }
 
-function trigger(target, key, computedDirty) {
-    // 1. Trigger dependencies on the exact key
-    const keysMap = depMap.get(target);
-    if (keysMap) {
-        const computedKeys = keysMap.get(key);
-        if (computedKeys) {
-            for (const computedKey of computedKeys) {
-                if (!computedDirty.get(computedKey)) {
-                    computedDirty.set(computedKey, true);
-                    // Propagate to other computed properties depending on this one
-                    trigger(target, computedKey, computedDirty);
-                }
-            }
-        }
-    }
 
-    // 2. Propagate invalidation to parents in case target is a nested object
-    const parentRelation = parentMap.get(target);
-    if (parentRelation) {
-        const { parentTarget, parentKey } = parentRelation;
-        trigger(parentTarget, parentKey, computedDirty);
-    }
-}
-
+/**
+ * Factory for creating and managing Proxy handlers for reactive state objects.
+ */
 export class ProxyHandlerFactory {
-    /**
-     * @param {Object} [options={}] - Configuration options.
-     * @param {string[]} [options.computedKeys=[]] - List of keys that should be treated as computed properties.
-     * @param {function(): void} [options.onChange=() => {}] - Callback triggered when a property is set.
-     * @param {function(string, Object): any} [options.getComputedValue=() => undefined] - Function to evaluate a computed property.
-     */
-    constructor({
-        computedKeys = [],
-        onChange = () => {},
-        getComputedValue = () => undefined
-    } = {}) {
-        /** @type {Set&lt;string>} @private */
-        this.computedKeys = new Set(computedKeys);
-        /** @type {function(): void} @private */
-        this.onChange = onChange;
-        /** @type {function(string, Object): any} @private */
-        this.getComputedValueReal = getComputedValue;
-        /** @type {WeakMap&lt;Object, Proxy>} @private */
-        this.proxyCache = new WeakMap();
+  /**
+   * @param {object} [options] - Configuration options.
+   * @param {string[]} [options.computedKeys] - List of keys that should be treated as computed properties.
+   * @param {function(): void} [options.onChange] - Callback triggered when a property is set.
+   * @param {function(string, object): any} [options.getComputedValue] - Function to evaluate a computed property.
+   * @param {object} [options.instance] - The component instance for fallback property lookups.
+   * @param {boolean} [options.bypassSymbol] - Bypasses Symbol check during lookup.
+   */
+  constructor({
+    computedKeys = [],
+    onChange = () => {},
+    getComputedValue = () => undefined,
+    instance = null,
+    bypassSymbol = false,
+  } = {}) {
+    /** @type {Set&lt;string>} @private */
+    this.computedKeys = new Set(computedKeys);
+    /** @type {function(): void} @private */
+    this.onChange = onChange;
+    /** @type {function(string, object): any} @private */
+    this.getComputedValueReal = getComputedValue;
+    /** @type {WeakMap&lt;object, Proxy>} @private */
+    this.proxyCache = new WeakMap();
+    /** @type {Map&lt;string, AvenxWatcher>} @private */
+    this.computedWatchers = new Map();
+    /** @type {object|null} @private */
+    this.instance = instance;
+    /** @type {boolean} @private */
+    this.bypassSymbol = bypassSymbol || (typeof globalThis !== 'undefined' &amp;&amp; !!globalThis.__avenx_bypass_symbol__);
+    /** @type {object|null} @private */
+    this.rootTarget = null;
+  }
 
-        // Computed property caching maps
-        /** @type {Map&lt;string, any>} @private */
-        this.computedCache = new Map();
-        /** @type {Map&lt;string, boolean>} @private */
-        this.computedDirty = new Map();
+  /**
+   * Evaluates and caches a computed property using an internal AvenxWatcher.
+   * @param {string} key - The computed key.
+   * @param {object} receiver - The proxy receiver.
+   * @returns {any}
+   */
+  evaluateComputedWatcher(key, receiver) {
+    const target = receiver[RAW_SYMBOL] || receiver;
+    track(target, key);
 
-        // Mark all computed properties initially dirty
-        for (const key of computedKeys) {
-            this.computedDirty.set(key, true);
-        }
+    let watcher = this.computedWatchers.get(key);
+    if (!watcher) {
+      watcher = new AvenxWatcher(
+        () => this.getComputedValueReal(key, receiver),
+        () => {
+          trigger(target, key);
+          this.notifyChange(target);
+        },
+        { lazy: true },
+      );
+      this.computedWatchers.set(key, watcher);
     }
+    return watcher.evaluate();
+  }
 
-    /**
-     * Internal helper to evaluate and cache a computed property.
-     * @param {string} key
-     * @param {Object} target
-     * @returns {any}
-     * @private
-     */
-    evaluateComputedCached(key, receiver) {
-        const target = receiver[RAW_SYMBOL] || receiver;
-        // Track the computed property itself as a dependency of whatever outer computed is evaluating
-        track(target, key);
-
-        if (this.computedCache.has(key) &amp;&amp; !this.computedDirty.get(key)) {
-            return this.computedCache.get(key);
-        }
-
-        // Push to active evaluation context stack
-        evaluationStack.push(activeComputedKey);
-        activeComputedKey = key;
-
-        try {
-            const val = this.getComputedValueReal(key, receiver);
-            this.computedCache.set(key, val);
-            this.computedDirty.set(key, false);
-            return val;
-        } finally {
-            activeComputedKey = evaluationStack.pop();
-        }
+  /**
+   * Cleans up all computed watchers created by this proxy handler.
+   */
+  teardown() {
+    for (const watcher of this.computedWatchers.values()) {
+      watcher.teardown();
     }
+    this.computedWatchers.clear();
+  }
 
-    /**
-     * Creates the proxy handler object.
-     * @returns {ProxyHandler&lt;Object>}
-     */
-    create() {
-        return {
-            set: (target, key, value) => this.set(target, key, value),
-            get: (target, key, receiver) => this.get(target, key, receiver),
-            ownKeys: target => this.ownKeys(target),
-            getOwnPropertyDescriptor: (target, key) => this.getOwnPropertyDescriptor(target, key),
-            deleteProperty: (target, key) => this.deleteProperty(target, key)
-        };
+  /**
+   * Checks if the target object is still connected to the root state.
+   * @param {object} target - The target raw object.
+   * @returns {boolean}
+   */
+  isConnected(target) {
+    if (!this.rootTarget) {
+      return true;
     }
-
-    /**
-     * Proxy 'set' trap.
-     * @param {Object} target - The target object.
-     * @param {string|symbol} key - The property key.
-     * @param {any} value - The new value.
-     * @returns {boolean}
-     */
-    set(target, key, value) {
-        if (value &amp;&amp; value[RAW_SYMBOL]) {
-            value = value[RAW_SYMBOL];
-        }
-        const oldValue = target[key];
-        target[key] = value;
-
-        if (isReactiveTarget(value)) {
-            parentMap.set(value, { parentTarget: target, parentKey: key });
-        }
-
-        if (oldValue !== value || (Array.isArray(target) &amp;&amp; key === 'length')) {
-            trigger(target, key, this.computedDirty);
-            this.onChange();
-        }
+    let current = target;
+    while (current) {
+      if (current === this.rootTarget) {
         return true;
+      }
+      const relation = parentMap.get(current);
+      if (!relation) {
+        break;
+      }
+      current = relation.parentTarget;
     }
+    return false;
+  }
 
-    /**
-     * Proxy 'get' trap.
-     * Redirects to getComputedValue if the key is a computed property.
-     * @param {Object} target - The target object.
-     * @param {string|symbol} key - The property key.
-     * @param {Object} receiver - The proxy or object inheriting from the proxy.
-     * @returns {any}
-     */
-    get(target, key, receiver) {
-        if (key === RAW_SYMBOL) {
-            return target;
-        }
-        if (this.computedKeys.has(key)) {
-            return this.evaluateComputedCached(key, receiver);
-        }
-        
-        // Track property access
-        if (typeof key !== 'symbol') {
-            track(target, key);
-        }
-
-        const value = Reflect.get(target, key, receiver);
-        if (typeof value === 'function') {
-            if (Array.isArray(target) &amp;&amp; mutatingArrayMethods.has(key)) {
-                return (...args) => {
-                    const result = target[key](...args);
-                    trigger(target, 'length', this.computedDirty);
-                    this.onChange();
-                    return result;
-                };
-            }
-            return value.bind(receiver);
-        }
-        if (isReactiveTarget(value)) {
-            parentMap.set(value, { parentTarget: target, parentKey: key });
-            return this.getOrCreateProxy(value);
-        }
-        return value;
+  /**
+   * Notifies about a change if the target is connected to the root state.
+   * @param {object} target - The target raw object.
+   */
+  notifyChange(target) {
+    if (this.isConnected(target)) {
+      this.onChange();
     }
+  }
 
-    /**
-     * Proxy 'deleteProperty' trap.
-     * @param {Object} target - The target object.
-     * @param {string|symbol} key - The property key.
-     * @returns {boolean}
-     */
-    deleteProperty(target, key) {
-        const hasKey = Reflect.has(target, key);
-        const result = Reflect.deleteProperty(target, key);
+  /**
+   * Returns a custom implementation of a Map method.
+   * @param {Map} target - The raw Map.
+   * @param {string|symbol} key - The property/method key.
+   * @param {Proxy} receiver - The Map proxy.
+   * @returns {any}
+   */
+  getMapMethod(target, key, receiver) {
+    if (key === 'size') {
+      track(target, 'size');
+      return target.size;
+    }
+    if (key === 'get') {
+      return (k) => {
+        track(target, k);
+        const val = target.get(k);
+        if (isReactiveTarget(val)) {
+          parentMap.set(val, { parentTarget: target, parentKey: k });
+          return this.getOrCreateProxy(val);
+        }
+        return val;
+      };
+    }
+    if (key === 'has') {
+      return (k) => {
+        track(target, k);
+        return target.has(k);
+      };
+    }
+    if (key === 'set') {
+      return (k, v) => {
+        const rawVal = v &amp;&amp; v[RAW_SYMBOL] ? v[RAW_SYMBOL] : v;
+        const hasKey = target.has(k);
+        const oldValue = target.get(k);
+        const valueChanged = oldValue !== rawVal;
+
+        target.set(k, rawVal);
+
+        if (isReactiveTarget(oldValue)) {
+          cleanupParentMap(oldValue);
+        }
+
+        if (isReactiveTarget(rawVal)) {
+          parentMap.set(rawVal, { parentTarget: target, parentKey: k });
+        }
+
+        if (valueChanged || !hasKey) {
+          trigger(target, !hasKey ? [k, 'size'] : k);
+          this.notifyChange(target);
+        }
+        return receiver;
+      };
+    }
+    if (key === 'delete') {
+      return (k) => {
+        const hasKey = target.has(k);
+        const oldValue = target.get(k);
+
+        const result = target.delete(k);
+
         if (hasKey) {
-            trigger(target, key, this.computedDirty);
-            this.onChange();
+          if (isReactiveTarget(oldValue)) {
+            cleanupParentMap(oldValue);
+          }
+
+          trigger(target, [k, 'size']);
+          this.notifyChange(target);
         }
+
         return result;
+      };
     }
-
-    /**
-     * Proxy 'ownKeys' trap.
-     * Includes computed keys in the list of keys.
-     * @param {Object} target - The target object.
-     * @returns {Array&lt;string|symbol>}
-     */
-    ownKeys(target) {
-        return [...Reflect.ownKeys(target), ...this.computedKeys];
-    }
-
-    /**
-     * Proxy 'getOwnPropertyDescriptor' trap.
-     * Ensures computed properties appear as own properties.
-     * @param {Object} target - The target object.
-     * @param {string|symbol} key - The property key.
-     * @returns {PropertyDescriptor|undefined}
-     */
-    getOwnPropertyDescriptor(target, key) {
-        if (this.computedKeys.has(key)) {
-            return { enumerable: true, configurable: true };
+    if (key === 'clear') {
+      return () => {
+        const size = target.size;
+        if (size > 0) {
+          const keysMap = depMap.get(target);
+          const keysToTrigger = ['size'];
+          if (keysMap) {
+            keysToTrigger.push(...keysMap.keys());
+          }
+          target.clear();
+          trigger(target, keysToTrigger);
+          this.notifyChange(target);
         }
-        return Reflect.getOwnPropertyDescriptor(target, key);
+      };
     }
-
-    /**
-     * Returns a cached proxy or creates a new proxy for a nested object/array.
-     * @param {Object|Array} val - The nested object or array.
-     * @returns {Proxy} The reactive proxy.
-     * @private
-     */
-    getOrCreateProxy(val) {
-        if (this.proxyCache.has(val)) {
-            return this.proxyCache.get(val);
-        }
-        const handler = {
-            get: (target, key, receiver) => {
-                if (key === RAW_SYMBOL) {
-                    return target;
-                }
-                if (typeof key !== 'symbol') {
-                    track(target, key);
-                }
-                const value = Reflect.get(target, key, receiver);
-                if (typeof value === 'function') {
-                    if (Array.isArray(target) &amp;&amp; mutatingArrayMethods.has(key)) {
-                        return (...args) => {
-                            const result = target[key](...args);
-                            trigger(target, 'length', this.computedDirty);
-                            this.onChange();
-                            return result;
-                        };
-                    }
-                    return value.bind(receiver);
-                }
-                if (isReactiveTarget(value)) {
-                    parentMap.set(value, { parentTarget: target, parentKey: key });
-                    return this.getOrCreateProxy(value);
-                }
-                return value;
-            },
-            set: (target, key, value) => {
-                if (value &amp;&amp; value[RAW_SYMBOL]) {
-                    value = value[RAW_SYMBOL];
-                }
-                const oldValue = target[key];
-                target[key] = value;
-
-                if (isReactiveTarget(value)) {
-                    parentMap.set(value, { parentTarget: target, parentKey: key });
-                }
-
-                if (oldValue !== value || (Array.isArray(target) &amp;&amp; key === 'length')) {
-                    trigger(target, key, this.computedDirty);
-                    this.onChange();
-                }
-                return true;
-            },
-            deleteProperty: (target, key) => {
-                const hasKey = Reflect.has(target, key);
-                const result = Reflect.deleteProperty(target, key);
-                if (hasKey) {
-                    trigger(target, key, this.computedDirty);
-                    this.onChange();
-                }
-                return result;
-            }
+    if (key === 'forEach') {
+      return (callback, thisArg) => {
+        track(target, 'size');
+        target.forEach((val, k) => {
+          callback.call(
+            thisArg,
+            isReactiveTarget(val) ? this.getOrCreateProxy(val) : val,
+            isReactiveTarget(k) ? this.getOrCreateProxy(k) : k,
+            receiver,
+          );
+        });
+      };
+    }
+    if (key === 'keys') {
+      return () => {
+        track(target, 'size');
+        const iterator = target.keys();
+        const self = this;
+        return {
+          next() {
+            const { value, done } = iterator.next();
+            return {
+              value: done ? undefined : isReactiveTarget(value) ? self.getOrCreateProxy(value) : value,
+              done,
+            };
+          },
+          [Symbol.iterator]() {
+            return this;
+          },
         };
-        const proxy = new Proxy(val, handler);
-        this.proxyCache.set(val, proxy);
-        return proxy;
+      };
     }
-}
+    if (key === 'values') {
+      return () => {
+        track(target, 'size');
+        const iterator = target.values();
+        const self = this;
+        return {
+          next() {
+            const { value, done } = iterator.next();
+            return {
+              value: done ? undefined : isReactiveTarget(value) ? self.getOrCreateProxy(value) : value,
+              done,
+            };
+          },
+          [Symbol.iterator]() {
+            return this;
+          },
+        };
+      };
+    }
+    if (key === 'entries' || key === Symbol.iterator) {
+      return () => {
+        track(target, 'size');
+        const iterator = target.entries();
+        const self = this;
+        return {
+          next() {
+            const { value, done } = iterator.next();
+            let unwrapped;
+            if (done) {
+              unwrapped = undefined;
+            } else {
+              unwrapped = [
+                isReactiveTarget(value[0]) ? self.getOrCreateProxy(value[0]) : value[0],
+                isReactiveTarget(value[1]) ? self.getOrCreateProxy(value[1]) : value[1],
+              ];
+            }
+            return {
+              value: unwrapped,
+              done,
+            };
+          },
+          [Symbol.iterator]() {
+            return this;
+          },
+        };
+      };
+    }
 
+    const value = Reflect.get(target, key, target);
+    if (typeof value === 'function') {
+      return value.bind(target);
+    }
+    return value;
+  }
 
-</code></pre>
+  /**
+   * Returns a custom implementation of a Set method.
+   * @param {Set} target - The raw Set.
+   * @param {string|symbol} key - The property/method key.
+   * @param {Proxy} receiver - The Set proxy.
+   * @returns {any}
+   */
+  getSetMethod(target, key, receiver) {
+    if (key === 'size') {
+      track(target, 'size');
+      return target.size;
+    }
+    if (key === 'has') {
+      return (val) => {
+        const rawVal = val &amp;&amp; val[RAW_SYMBOL] ? val[RAW_SYMBOL] : val;
+        track(target, rawVal);
+        return target.has(rawVal);
+      };
+    }
+    if (key === 'add') {
+      return (val) => {
+        const rawVal = val &amp;&amp; val[RAW_SYMBOL] ? val[RAW_SYMBOL] : val;
+        const hasVal = target.has(rawVal);
+        if (!hasVal) {
+          target.add(rawVal);
+          if (isReactiveTarget(rawVal)) {
+            parentMap.set(rawVal, { parentTarget: target, parentKey: rawVal });
+          }
+          trigger(target, [rawVal, 'size']);
+          this.notifyChange(target);
+        }
+        return receiver;
+      };
+    }
+    if (key === 'delete') {
+      return (val) => {
+        const rawVal = val &amp;&amp; val[RAW_SYMBOL] ? val[RAW_SYMBOL] : val;
+        const hasVal = target.has(rawVal);
+
+        const result = target.delete(rawVal);
+
+        if (hasVal) {
+          if (isReactiveTarget(rawVal)) {
+            cleanupParentMap(rawVal);
+          }
+
+          trigger(target, [rawVal, 'size']);
+          this.notifyChange(target);
+        }
+
+        return result;
+      };
+    }
+    if (key === 'clear') {
+      return () => {
+        const size = target.size;
+        if (size > 0) {
+          const keysMap = depMap.get(target);
+          const keysToTrigger = ['size'];
+          if (keysMap) {
+            keysToTrigger.push(...keysMap.keys());
+          }
+          target.clear();
+          trigger(target, keysToTrigger);
+          this.notifyChange(target);
+        }
+      };
+    }
+    if (key === 'forEach') {
+      return (callback, thisArg) => {
+        track(target, 'size');
+        target.forEach((val) => {
+          if (isReactiveTarget(val)) {
+            parentMap.set(val, { parentTarget: target, parentKey: val });
+          }
+          callback.call(
+            thisArg,
+            isReactiveTarget(val) ? this.getOrCreateProxy(val) : val,
+            isReactiveTarget(val) ? this.getOrCreateProxy(val) : val,
+            receiver,
+          );
+        });
+      };
+    }
+    if (key === 'values' || key === 'keys' || key === Symbol.iterator) {
+      return () => {
+        track(target, 'size');
+        const iterator = target.values();
+        const self = this;
+        return {
+          next() {
+            const { value, done } = iterator.next();
+            if (!done &amp;&amp; isReactiveTarget(value)) {
+              parentMap.set(value, { parentTarget: target, parentKey: value });
+            }
+            return {
+              value: done ? undefined : isReactiveTarget(value) ? self.getOrCreateProxy(value) : value,
+              done,
+            };
+          },
+          [Symbol.iterator]() {
+            return this;
+          },
+        };
+      };
+    }
+    if (key === 'entries') {
+      return () => {
+        track(target, 'size');
+        const iterator = target.entries();
+        const self = this;
+        return {
+          next() {
+            const { value, done } = iterator.next();
+            let unwrapped;
+            if (done) {
+              unwrapped = undefined;
+            } else {
+              if (isReactiveTarget(value[0])) {
+                parentMap.set(value[0], { parentTarget: target, parentKey: value[0] });
+              }
+              unwrapped = [
+                isReactiveTarget(value[0]) ? self.getOrCreateProxy(value[0]) : value[0],
+                isReactiveTarget(value[1]) ? self.getOrCreateProxy(value[1]) : value[1],
+              ];
+            }
+            return {
+              value: unwrapped,
+              done,
+            };
+          },
+          [Symbol.iterator]() {
+            return this;
+          },
+        };
+      };
+    }
+
+    const value = Reflect.get(target, key, target);
+    if (typeof value === 'function') {
+      return value.bind(target);
+    }
+    return value;
+  }
+
+  /**
+   * Creates the proxy handler object.
+   * @returns {ProxyHandler&lt;object>}
+   */
+  /**
+   * Creates the proxy handler object.
+   * @returns {ProxyHandler&lt;object>}
+   */
+  create() {
+    if (!this._sharedHandler) {
+      this._sharedHandler = {
+        set: (target, key, value) => {
+          if (!this.rootTarget) {
+            this.rootTarget = target;
+          }
+          return this.set(target, key, value);
+        },
+        get: (target, key, receiver) => {
+          if (!this.rootTarget) {
+            this.rootTarget = target;
+          }
+          return this.get(target, key, receiver);
+        },
+        ownKeys: (target) => {
+          if (!this.rootTarget) {
+            this.rootTarget = target;
+          }
+          return this.ownKeys(target);
+        },
+        getOwnPropertyDescriptor: (target, key) => {
+          if (!this.rootTarget) {
+            this.rootTarget = target;
+          }
+          return this.getOwnPropertyDescriptor(target, key);
+        },
+        deleteProperty: (target, key) => {
+          if (!this.rootTarget) {
+            this.rootTarget = target;
+          }
+          return this.deleteProperty(target, key);
+        },
+      };
+    }
+    return this._sharedHandler;
+  }
+
+  /**
+   * Proxy 'set' trap.
+   * @param {object} target - The target object.
+   * @param {string|symbol} key - The property key.
+   * @param {any} value - The new value.
+   * @returns {boolean}
+   */
+  set(target, key, value) {
+    if (value &amp;&amp; value[RAW_SYMBOL]) {
+      value = value[RAW_SYMBOL];
+    }
+    const oldValue = target[key];
+
+    if (isReactiveTarget(oldValue)) {
+      cleanupParentMap(oldValue);
+    }
+    target[key] = value;
+
+    if (isReactiveTarget(value)) {
+      parentMap.set(value, { parentTarget: target, parentKey: key });
+    }
+
+    if (typeof key !== 'symbol' &amp;&amp; (oldValue !== value || (Array.isArray(target) &amp;&amp; key === 'length'))) {
+      trigger(target, key, oldValue, value);
+      this.notifyChange(target);
+    }
+    return true;
+  }
+
+  /**
+   * Proxy 'get' trap.
+   * Redirects to evaluateComputedWatcher if the key is a computed property.
+   * @param {object} target - The target object.
+   * @param {string|symbol} key - The property key.
+   * @param {object} receiver - The proxy or object inheriting from the proxy.
+   * @returns {any}
+   */
+  get(target, key, receiver) {
+    if (key === IS_REACTIVE_PROXY) {
+      return true;
+    }
+    if (key === RAW_SYMBOL) {
+      return target;
+    }
+    if (key === PROXY_REF_SYMBOL) {
+      return target[PROXY_REF_SYMBOL];
+    }
+    if (this.computedKeys.has(key)) {
+      return this.evaluateComputedWatcher(key, receiver);
+    }
+
+    if (target instanceof Map) {
+      return this.getMapMethod(target, key, receiver);
+    }
+    if (target instanceof Set) {
+      return this.getSetMethod(target, key, receiver);
+    }
+
+    if (!(key in target) &amp;&amp; this.instance &amp;&amp; key in this.instance) {
+      const val = this.instance[key];
+      if (typeof val === 'function') {
+        return val.bind(this.instance);
+      }
+      return val;
+    }
+
+    // Track property access
+    if (typeof key !== 'symbol') {
+      track(target, key);
+    }
+
+    const value = Reflect.get(target, key, receiver);
+    if (typeof value === 'function') {
+      if (Array.isArray(target) &amp;&amp; mutatingArrayMethods.has(key)) {
+        return (...args) => {
+          const result = target[key](...args);
+          trigger(target, 'length');
+          this.notifyChange(target);
+          return result;
+        };
+      }
+      return value.bind(receiver);
+    }
+    if (isReactiveTarget(value)) {
+      parentMap.set(value, { parentTarget: target, parentKey: key });
+      if (!this.bypassSymbol &amp;&amp; value[PROXY_REF_SYMBOL]) {
+        return value[PROXY_REF_SYMBOL];
+      }
+      return this.getOrCreateProxy(value);
+    }
+    return value;
+  }
+
+  /**
+   * Proxy 'deleteProperty' trap.
+   * @param {object} target - The target object.
+   * @param {string|symbol} key - The property key.
+   * @returns {boolean}
+   */
+  deleteProperty(target, key) {
+    const hasKey = Reflect.has(target, key);
+    const oldValue = target[key];
+    const result = Reflect.deleteProperty(target, key);
+
+    if (isReactiveTarget(oldValue)) {
+      cleanupParentMap(oldValue);
+    }
+
+    if (hasKey) {
+      trigger(target, key);
+      this.notifyChange(target);
+    }
+    return result;
+  }
+
+  /**
+   * Proxy 'ownKeys' trap.
+   * Includes computed keys in the list of keys.
+   * @param {object} target - The target object.
+   * @returns {Array&lt;string|symbol>}
+   */
+  ownKeys(target) {
+    return [...Reflect.ownKeys(target), ...this.computedKeys];
+  }
+
+  /**
+   * Proxy 'getOwnPropertyDescriptor' trap.
+   * Ensures computed properties appear as own properties.
+   * @param {object} target - The target object.
+   * @param {string|symbol} key - The property key.
+   * @returns {PropertyDescriptor|undefined}
+   */
+  getOwnPropertyDescriptor(target, key) {
+    if (this.computedKeys.has(key)) {
+      return { enumerable: true, configurable: true };
+    }
+    return Reflect.getOwnPropertyDescriptor(target, key);
+  }
+
+  /**
+   * Returns a cached proxy or creates a new proxy for a nested object/array.
+   * @param {object | Array} val - The nested object or array.
+   * @returns {Proxy} The reactive proxy.
+   * @private
+   */
+  getOrCreateProxy(val) {
+    if (!this.bypassSymbol &amp;&amp; val[PROXY_REF_SYMBOL]) {
+      return val[PROXY_REF_SYMBOL];
+    }
+    if (val[IS_REACTIVE_PROXY]) {
+      return val;
+    }
+    if (this.proxyCache.has(val)) {
+      return this.proxyCache.get(val);
+    }
+    const proxy = new Proxy(val, this.create());
+    this.proxyCache.set(val, proxy);
+    if (!this.bypassSymbol &amp;&amp; Object.isExtensible(val)) {
+      Object.defineProperty(val, PROXY_REF_SYMBOL, {
+        value: proxy,
+        writable: false,
+        enumerable: false,
+        configurable: false,
+      });
+    }
+    return proxy;
+  }
+} </code></pre>
         </article>
     </section>
 
@@ -374,13 +760,13 @@ export class ProxyHandlerFactory {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

@@ -26,24 +26,24 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>const fs = require('fs');
-const path = require('path');
-const StyleProcessor = require('./compiler/StyleProcessor');
-const ComponentParser = require('./compiler/ComponentParser');
+            <pre class="prettyprint source linenums"><code>import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import loadConfig from './config.js';
+const findProjectRoot = loadConfig.findProjectRoot;
+import StyleProcessor from './compiler/StyleProcessor.js';
+import ComponentParser from './compiler/ComponentParser.js';
+import { logger } from './core/runtime/AvenxLogger.js';
+import { performance } from 'perf_hooks';
+import { AvenxErrorCodes } from './core/runtime/AvenxError.js';
+import { BuildError } from './compiler/errors/index.js';
+import { reportWarning } from './compiler/utils/warningReporter.js';
+import { loadEnv, replaceEnvVariables } from './env.js';
 
-const AvenxCompilerErrors = {
-    AVX_C01: 'Could not create dist directory at "{0}".',
-    AVX_C02: '"src" directory not found at "{0}". Run "avenx init" to scaffold a project.'
-};
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-function formatCompilerError(code, ...args) {
-    let message = AvenxCompilerErrors[code] || 'An unknown compiler error occurred.';
-    args.forEach((arg, idx) => {
-        message = message.replace(`{${idx}}`, String(arg));
-    });
-    return `[${code}] ${message}`;
-}
-
+const BUNDLE_SIZE_WARNING_THRESHOLD_KB = 50;
 
 /**
  * AvenxCompiler is the main orchestrator for the Avenx-JS build process.
@@ -51,271 +51,658 @@ function formatCompilerError(code, ...args) {
  * final bundling of the application.
  */
 class AvenxCompiler {
+  /**
+   * Creates an instance of AvenxCompiler and initializes its sub-processors.
+   * @param {object} [options] - Optional custom settings to override config defaults.
+   */
+  constructor(options = {}) {
     /**
-     * Creates an instance of AvenxCompiler and initializes its sub-processors.
-     * Uses the current working directory as the project root.
+     * The root directory of the project.
+     * @type {string}
      */
-    constructor() {
-        /** 
-         * The root directory of the project.
-         * @type {string} 
-         */
-        this.rootDir = process.cwd();
-        /** 
-         * The source directory (usually 'src').
-         * @type {string} 
-         */
-        this.srcDir = path.join(this.rootDir, 'src');
-        /** 
-         * The distribution directory (usually 'dist').
-         * @type {string} 
-         */
-        this.distDir = path.join(this.rootDir, 'dist');
-        /** 
-         * The directory containing core runtime files.
-         * @type {string} 
-         */
-        this.coreDir = path.join(__dirname, 'core');
-        
-        /** 
-         * @type {StyleProcessor} 
-         */
-        this.styleProcessor = new StyleProcessor();
-        /** 
-         * @type {ComponentParser} 
-         */
-        this.componentParser = new ComponentParser(this.styleProcessor);
-        
-        this.init();
+    this.rootDir = options.rootDir || findProjectRoot(process.cwd());
+    loadEnv(this.rootDir);
+
+    // Expose properties prefixed with AVX_PUBLIC_ to the compiler
+    this.publicEnv = {};
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith('AVX_PUBLIC_')) {
+        this.publicEnv[key] = process.env[key];
+      }
     }
 
+    const config = { ...loadConfig(this.rootDir), ...options };
+
     /**
-     * Initializes the compiler environment, ensuring required directories exist.
-     * @private
+     * The output bundle name without file extension.
+     * Defaults to "bundle" when outputName is not configured.
+     * @type {string}
      */
-    init() {
-        if (!fs.existsSync(this.distDir)) {
-            try {
-                fs.mkdirSync(this.distDir, { recursive: true });
-            } catch (e) {
-                console.error(`❌ ${formatCompilerError('AVX_C01', this.distDir)}`);
+    this.outputName = config.outputName || 'bundle';
+
+    // Configure logger for build-time compiler
+    logger.configure({
+      level: (config.logging &amp;&amp; config.logging.level) || 'info',
+      silent:
+        (config.logging &amp;&amp;
+          (config.logging.silent || config.logging.level === 'silent' || config.logging.level === 'off')) ||
+        false,
+      // CLI output doesn't need prefixes for generic info logs. The CLI injects its
+      // own formatter (see bin/colors.js) to tint warnings and errors; other
+      // consumers such as the Vite plugin keep the plain pass-through default.
+      formatter: (config.logging &amp;&amp; config.logging.formatter) || ((level, args) => args),
+    });
+
+    /**
+     * The source directory (usually 'src').
+     * @type {string}
+     */
+    this.srcDir = path.join(this.rootDir, config.srcDir);
+    /**
+     * The distribution directory (usually 'dist').
+     * @type {string}
+     */
+    this.distDir = path.join(this.rootDir, config.distDir);
+    /**
+     * The directory containing core runtime files.
+     * @type {string}
+     */
+    this.coreDir = path.join(__dirname, 'core');
+
+    /**
+     * @type {object}
+     */
+    this.config = config;
+    /**
+     * @type {StyleProcessor}
+     */
+    this.styleProcessor = new StyleProcessor(config.style || {}, config);
+    /**
+     * @type {ComponentParser}
+     */
+    this.componentParser = new ComponentParser(this.styleProcessor, config.voidTags, config);
+
+    this.init();
+  }
+
+  /**
+   * Initializes the compiler environment, ensuring required directories exist.
+   * @private
+   */
+  init() {
+    if (!fs.existsSync(this.distDir)) {
+      try {
+        fs.mkdirSync(this.distDir, { recursive: true });
+      } catch {
+        logger.error(`❌ ${new BuildError(AvenxErrorCodes.COMPILER_DIST_CREATION_FAILED, this.distDir).message}`);
+      }
+    }
+  }
+
+  /**
+   * Executes the full build process.
+   * Includes resetting style processor, generating runtime, processing bridges, components, and main app.
+   */
+  build() {
+    logger.info('--- Avenx-JS Compiler ---');
+    const startTime = performance.now();
+
+    if (!fs.existsSync(this.srcDir)) {
+      logger.error(`❌ ${new BuildError(AvenxErrorCodes.COMPILER_SRC_DIR_MISSING, this.srcDir).message}`);
+      return;
+    }
+
+    this.styleProcessor.reset();
+
+    let bundleJs = this.getRuntime();
+    const bridgeData = this.processBridges();
+    bundleJs += this.processGuards();
+
+    try {
+      bundleJs += this.processComponents();
+    } catch (err) {
+      logger.error(`❌ ${err.message}`);
+      return; // halt build — do not write dist files
+    }
+
+    const pageData = this.processPages();
+    bundleJs += pageData.pagesJs;
+    bundleJs += this.processMain((bridgeData.registrations || '') + '\n' + (pageData.registrations || ''));
+
+    const jsFileName = `${this.outputName}.js`;
+    const cssFileName = `${this.outputName}.css`;
+
+    fs.writeFileSync(path.join(this.distDir, jsFileName), bundleJs);
+
+    const isDevMode =
+      this.config.dev === true ||
+      this.config.mode === 'development' ||
+      (this.config.style &amp;&amp;
+        (this.config.style.dev === true ||
+          this.config.style.inlineSourceMap === true ||
+          this.config.style.sourceMap === 'inline')) ||
+      process.env.NODE_ENV === 'development';
+
+    const baseCssContent = this.styleProcessor.getGlobalStyles({
+      dev: isDevMode,
+      distDir: this.distDir,
+      cssFileName,
+    });
+    const sourceMap = this.styleProcessor.getSourceMap(this.distDir, cssFileName);
+    const cssWithMapComment = isDevMode ? baseCssContent : baseCssContent + `\n/*# sourceMappingURL=${cssFileName}.map */\n`;
+
+    fs.writeFileSync(path.join(this.distDir, cssFileName), cssWithMapComment);
+    fs.writeFileSync(path.join(this.distDir, `${cssFileName}.map`), JSON.stringify(sourceMap, null, 2));
+
+    const files = [jsFileName, cssFileName, `${cssFileName}.map`];
+
+    logger.info('\nAsset sizes:');
+
+    files.forEach((file) => {
+      const filePath = path.join(this.distDir, file);
+      const bytes = fs.statSync(filePath).size;
+      const sizeKb = bytes / 1024;
+
+      logger.info(`${file}: ${sizeKb.toFixed(2)} KB`);
+
+      if (sizeKb > BUNDLE_SIZE_WARNING_THRESHOLD_KB) {
+        reportWarning(
+          AvenxErrorCodes.COMPILER_BUNDLE_SIZE_EXCEEDED,
+          new BuildError(
+            AvenxErrorCodes.COMPILER_BUNDLE_SIZE_EXCEEDED,
+            file,
+            BUNDLE_SIZE_WARNING_THRESHOLD_KB,
+            sizeKb.toFixed(2),
+          ),
+          this.config,
+        );
+      }
+    });
+
+    logger.info('-----------------------');
+    logger.info(`\nBuild erfolgreich: ${this.distDir}/${jsFileName} &amp; ${this.distDir}/${cssFileName}`);
+
+    const endTime = performance.now();
+    logger.info(`Build completed in ${Math.round(endTime - startTime)} ms`);
+  }
+
+  /**
+   * Reads the core runtime bundle file.
+   * @returns {string} The concatenated runtime source code.
+   * @private
+   */
+  getRuntime() {
+    const runtimePath = path.join(__dirname, '../dist/runtime.js');
+    const content = fs.readFileSync(runtimePath, 'utf-8');
+    return content.replace(/import\s+(?:[\s\w$,{}*]*?\s+from\s+['"].*?['"]|['"].*?['"]);?\r?\n?/g, '');
+  }
+
+  /**
+   * Processes bridge registrations from the global directory.
+   * @returns {{registrations: string}} The registration code for bridges.
+   * @private
+   */
+  processBridges() {
+    const globalDir = path.join(this.srcDir, 'global');
+    let registrations = '';
+
+    if (fs.existsSync(globalDir)) {
+      fs.readdirSync(globalDir).forEach((file) => {
+        if (file.endsWith('.bridge.js')) {
+          const name = path.basename(file, '.bridge.js');
+
+          const capitalizedName =
+            name
+              .split(/[-_]/)
+              .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+              .join('') + 'Bridge';
+
+          logger.info(`[Bridge] ${capitalizedName}`);
+
+          const content = replaceEnvVariables(fs.readFileSync(path.join(globalDir, file), 'utf-8'));
+
+          const match = content.match(/export\s+default\s+([\s\S]*)/);
+
+          if (match) {
+            const objStr = match[1].trim().replace(/;$/, '');
+            registrations += `app.registerBridge('${capitalizedName}', ${objStr});\n`;
+          }
+        }
+      });
+    }
+
+    return { registrations };
+  }
+
+  /**
+   * Processes guard classes from the global and guards directories.
+   * @returns {string} The concatenated guard source code.
+   * @private
+   */
+  processGuards() {
+    const globalDir = path.join(this.srcDir, 'global');
+    const guardsDir = path.join(this.srcDir, 'guards');
+    let guardsJs = '';
+
+    const processFile = (dir, file) => {
+      const name = path.basename(file, '.guard.js');
+
+      const capitalizedName =
+        name
+          .split(/[-_]/)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join('') + 'Guard';
+
+      logger.info(`[Guard] ${capitalizedName}`);
+
+      const content = replaceEnvVariables(fs.readFileSync(path.join(dir, file), 'utf-8'));
+
+      const cleaned = content
+        .replace(/import\s+(?:[\s\w$,{}*]*?\s+from\s+['"].*?['"]|['"].*?['"]);?\r?\n?/g, '')
+        .replace(/export\s+default\s+/g, '')
+        .replace(/export\s+/g, '');
+
+      guardsJs += `\n${cleaned}\n`;
+    };
+
+    if (fs.existsSync(globalDir)) {
+      fs.readdirSync(globalDir).forEach((file) => {
+        if (file.endsWith('.guard.js')) {
+          processFile(globalDir, file);
+        }
+      });
+    }
+
+    if (fs.existsSync(guardsDir)) {
+      fs.readdirSync(guardsDir).forEach((file) => {
+        if (file.endsWith('.guard.js')) {
+          processFile(guardsDir, file);
+        }
+      });
+    }
+
+    return guardsJs;
+  }
+
+  /**
+   * Processes all components in the src/components folder recursively.
+   * Resolves component dependencies and detects circular import loops using DFS.
+   * @returns {string} The concatenated source code of all compiled components.
+   * @private
+   */
+  processComponents() {
+    let componentsJs = '';
+    const compDir = path.join(this.srcDir, 'components');
+    const classNameMap = new Map();
+    const pathToClassName = new Map();
+
+    const toClassName = (fileName) =>
+      path
+        .basename(fileName, '.component.js')
+        .split(/[-_]/)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join('');
+
+    const scan = (dir) => {
+      if (!fs.existsSync(dir)) return;
+
+      fs.readdirSync(dir).forEach((file) => {
+        const fullPath = path.join(dir, file);
+
+        if (fs.statSync(fullPath).isDirectory()) {
+          scan(fullPath);
+        } else if (file.endsWith('.component.js')) {
+          const className = toClassName(file);
+
+          if (!classNameMap.has(className)) {
+            classNameMap.set(className, []);
+          }
+
+          classNameMap.get(className).push(fullPath);
+          pathToClassName.set(path.resolve(fullPath), className);
+        }
+      });
+    };
+
+    scan(compDir);
+
+    const duplicates = [...classNameMap.entries()].filter(([, paths]) => paths.length > 1);
+
+    if (duplicates.length > 0) {
+      const details = duplicates
+        .map(([className, paths]) => `  "${className}":\n${paths.map((p) => `    - ${p}`).join('\n')}`)
+        .join('\n');
+
+      throw new BuildError(AvenxErrorCodes.COMPILER_DUPLICATE_COMPONENT_NAME, details);
+    }
+
+    // Build dependency graph for components
+    const graph = new Map();
+    classNameMap.forEach((paths, className) => {
+      const fullPath = paths[0];
+      const deps = new Set();
+      if (fs.existsSync(fullPath)) {
+        const content = fs.readFileSync(fullPath, 'utf-8');
+
+        // Extract dependencies from JS import statements
+        const importRegex = /import\s+(?:[\s\w$,{}*]*?\s+from\s+['"](.*?)['"]|['"](.*?)['"]);?/g;
+        let match;
+        while ((match = importRegex.exec(content)) !== null) {
+          const importSpecifier = match[1] || match[2];
+          if (importSpecifier &amp;&amp; importSpecifier.startsWith('.')) {
+            let resolved = path.resolve(path.dirname(fullPath), importSpecifier);
+            if (!resolved.endsWith('.js')) {
+              if (fs.existsSync(`${resolved}.component.js`)) {
+                resolved = `${resolved}.component.js`;
+              } else if (fs.existsSync(`${resolved}.js`)) {
+                resolved = `${resolved}.js`;
+              }
             }
-        }
-    }
-
-    /**
-     * Executes the full build process.
-     * Includes resetting style processor, generating runtime, processing bridges, components, and main app.
-     */
-    build() {
-        console.log("--- Avenx-JS Compiler ---");
-        
-        if (!fs.existsSync(this.srcDir)) {
-            console.error(`❌ ${formatCompilerError('AVX_C02', this.srcDir)}`);
-            return;
-        }
-
-        // Reset style processor to avoid accumulating styles across multiple builds (watch mode)
-        this.styleProcessor.reset();
-
-        let bundleJs = this.getRuntime();
-        const bridgeData = this.processBridges();
-        bundleJs += this.processGuards();
-        bundleJs += this.processComponents();
-        const pageData = this.processPages();
-        bundleJs += pageData.pagesJs;
-        bundleJs += this.processMain((bridgeData.registrations || '') + '\n' + (pageData.registrations || ''));
-
-        fs.writeFileSync(path.join(this.distDir, 'bundle.js'), bundleJs);
-        fs.writeFileSync(path.join(this.distDir, 'bundle.css'), this.styleProcessor.getGlobalStyles());
-        
-        console.log("-----------------------");
-        console.log(`Build erfolgreich: dist/bundle.js &amp; dist/bundle.css`);
-    }
-
-    /**
-     * Reads the core runtime files and prepares them for the bundle.
-     * Strips imports and exports for a single-file bundle.
-     * @returns {string} The concatenated runtime source code.
-     * @private
-     */
-    getRuntime() {
-        const runtimeFiles = [
-            'runtime/AvenxError.js',
-            'security/evaluator.js',
-            'security/escapeHtml.js',
-            'reactive/proxyHandler.js',
-            'reactive/createState.js',
-            'reactive/createComputed.js',
-            'renderer/renderTemplate.js',
-            'renderer/domPatch.js',
-            'renderer/listManager.js',
-            'events/eventExecutor.js',
-            'events/bindEvents.js',
-            'runtime/lifecycle.js',
-            'runtime/AvenxBridge.js',
-            'runtime/AvenxComponent.js',
-            'runtime/AvenxPage.js',
-            'runtime/AvenxGuard.js',
-            'runtime/AvenxRouter.js',
-            'runtime/AvenxApp.js'
-        ];
-
-        return runtimeFiles
-            .map(file => fs.readFileSync(path.join(this.coreDir, file), 'utf-8'))
-            .map(source => source
-                .replace(/^import\s+.*?;\s*$/gm, '')
-                .replace(/export\s+/g, '')
-            )
-            .join("\n");
-    }
-
-    /**
-     * Processes bridge registrations from the global directory.
-     * @returns {{registrations: string}} The registration code for bridges.
-     * @private
-     */
-    processBridges() {
-        const globalDir = path.join(this.srcDir, 'global');
-        let registrations = "";
-        if (fs.existsSync(globalDir)) {
-            fs.readdirSync(globalDir).forEach(file => {
-                if (file.endsWith('.bridge.js')) {
-                    const name = path.basename(file, '.bridge.js');
-                    const capitalizedName = name.split(/[-_]/).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join("") + "Bridge";
-                    
-                    console.log(`[Bridge] ${capitalizedName}`);
-                    const content = fs.readFileSync(path.join(globalDir, file), 'utf-8');
-                    const match = content.match(/export\s+default\s+([\s\S]*)/);
-                    if (match) {
-                        const objStr = match[1].trim().replace(/;$/, '');
-                        registrations += `app.registerBridge('${capitalizedName}', ${objStr});\n`;
-                    }
-                }
-            });
-        }
-        return { registrations };
-    }
-
-    /**
-     * Processes guard classes from the global and guards directories.
-     * @returns {string} The concatenated guard source code.
-     * @private
-     */
-    processGuards() {
-        const globalDir = path.join(this.srcDir, 'global');
-        const guardsDir = path.join(this.srcDir, 'guards');
-        let guardsJs = "";
-
-        const processFile = (dir, file) => {
-            const name = path.basename(file, '.guard.js');
-            const capitalizedName = name.split(/[-_]/).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join("") + "Guard";
-            
-            console.log(`[Guard] ${capitalizedName}`);
-            const content = fs.readFileSync(path.join(dir, file), 'utf-8');
-            const cleaned = content
-                .replace(/^import\s+.*?;\s*$/gm, '')
-                .replace(/import\s+.*?\s+from\s+['"].*?['"];?/gm, '')
-                .replace(/export\s+default\s+/g, '')
-                .replace(/export\s+/g, '');
-            guardsJs += `\n${cleaned}\n`;
-        };
-
-        if (fs.existsSync(globalDir)) {
-            fs.readdirSync(globalDir).forEach(file => {
-                if (file.endsWith('.guard.js')) {
-                    processFile(globalDir, file);
-                }
-            });
-        }
-        if (fs.existsSync(guardsDir)) {
-            fs.readdirSync(guardsDir).forEach(file => {
-                if (file.endsWith('.guard.js')) {
-                    processFile(guardsDir, file);
-                }
-            });
-        }
-        return guardsJs;
-    }
-
-    /**
-     * Processes all components in the src/components folder recursively.
-     * @returns {string} The concatenated source code of all compiled components.
-     * @private
-     */
-    processComponents() {
-        let componentsJs = "";
-        const compDir = path.join(this.srcDir, 'components');
-        
-        const scan = (dir) => {
-            if (!fs.existsSync(dir)) return;
-            fs.readdirSync(dir).forEach(file => {
-                const fullPath = path.join(dir, file);
-                if (fs.statSync(fullPath).isDirectory()) {
-                    scan(fullPath);
-                } else if (file.endsWith('.component.js')) {
-                    console.log(`[Compiling] ${file}`);
-                    componentsJs += this.componentParser.parse(fullPath);
-                }
-            });
-        };
-
-        scan(compDir);
-        return componentsJs;
-    }
-
-    /**
-     * Processes all pages in the src/pages folder recursively.
-     * @returns {{pagesJs: string, registrations: string}} The compiled pages code and their registrations.
-     * @private
-     */
-    processPages() {
-        let pagesJs = "";
-        let registrations = "";
-        const pageDir = path.join(this.srcDir, 'pages');
-        
-        const scan = (dir) => {
-            if (!fs.existsSync(dir)) return;
-            fs.readdirSync(dir).forEach(file => {
-                const fullPath = path.join(dir, file);
-                if (fs.statSync(fullPath).isDirectory()) {
-                    scan(fullPath);
-                } else if (file.endsWith('.page.js')) {
-                    console.log(`[Compiling Page] ${file}`);
-                    const name = path.basename(file, '.page.js').split(/[-_]/).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join("");
-                    pagesJs += this.componentParser.parse(fullPath, 'page');
-                    registrations += `app.registerPage('${name}', ${name});\n`;
-                }
-            });
-        };
-
-        scan(pageDir);
-        return { pagesJs, registrations };
-    }
-
-    /**
-     * Processes the main application entry point.
-     * @param {string} registrations - The bridge and page registration code to inject.
-     * @returns {string} The wrapped main application code.
-     * @private
-     */
-    processMain(registrations) {
-        const mainFile = path.join(this.srcDir, 'main.app.js');
-        if (fs.existsSync(mainFile)) {
-            let main = fs.readFileSync(mainFile, 'utf-8')
-                .replace(/import\s*{\s*AvenxApp\s*}\s*from\s*['"].*?['"];?/g, '') 
-                .replace(/import\s+.*?\s+from\s+['"].*?['"];?/gm, ''); 
-            
-            if (registrations) {
-                main = main.replace(/(const\s+app\s+=\s+new\s+AvenxApp\([\s\S]*?\);)/, `$1\n${registrations}`);
+            const targetClassName = pathToClassName.get(resolved);
+            if (targetClassName &amp;&amp; targetClassName !== className) {
+              deps.add(targetClassName);
             }
-            return `\n(function(){\n${main}\n})();`;
+          }
         }
-        return "";
+
+        // Extract dependencies from HTML template tags (e.g. &lt;ChildComp />)
+        const tagRegex = /&lt;([A-Z][a-zA-Z0-9]*)\b/g;
+        while ((match = tagRegex.exec(content)) !== null) {
+          const tagName = match[1];
+          if (classNameMap.has(tagName) &amp;&amp; tagName !== className) {
+            deps.add(tagName);
+          }
+        }
+      }
+      graph.set(className, Array.from(deps));
+    });
+
+    // Cycle detection &amp; topological sort using DFS
+    const visited = new Set();
+    const visiting = new Map();
+    const reportedCycles = new Set();
+    const orderedClasses = [];
+
+    const dfs = (className, stack = []) => {
+      if (visited.has(className)) return;
+      if (visiting.has(className)) {
+        const startIndex = stack.indexOf(className);
+        const cyclePath = stack.slice(startIndex).concat(className);
+        const cycleStr = cyclePath.join(' -> ');
+        if (!reportedCycles.has(cycleStr)) {
+          reportedCycles.add(cycleStr);
+          reportWarning(
+            AvenxErrorCodes.COMPILER_CIRCULAR_DEPENDENCY,
+            new BuildError(AvenxErrorCodes.COMPILER_CIRCULAR_DEPENDENCY, cycleStr),
+            this.config,
+          );
+        }
+        return;
+      }
+
+      visiting.set(className, stack.length);
+      stack.push(className);
+
+      const deps = graph.get(className) || [];
+      for (const dep of deps) {
+        dfs(dep, stack);
+      }
+
+      stack.pop();
+      visiting.delete(className);
+      visited.add(className);
+      orderedClasses.push(className);
+    };
+
+    classNameMap.forEach((_, className) => {
+      if (!visited.has(className)) {
+        dfs(className);
+      }
+    });
+
+    const isTreeShakeEnabled =
+      (!this.config || (this.config.treeShakeComponents !== false &amp;&amp; this.config.treeShake !== false)) &amp;&amp;
+      (!this.options || (this.options.treeShakeComponents !== false &amp;&amp; this.options.treeShake !== false));
+
+    const usedComponents = isTreeShakeEnabled
+      ? this.findUsedComponents(classNameMap, pathToClassName, graph)
+      : new Set(classNameMap.keys());
+
+    const classesToCompile = orderedClasses.filter((className) => usedComponents.has(className));
+
+    classesToCompile.forEach((className) => {
+      const paths = classNameMap.get(className);
+      if (paths &amp;&amp; paths.length > 0) {
+        const fullPath = paths[0];
+        logger.info(`[Compiling] ${path.basename(fullPath)}`);
+        componentsJs += this.componentParser.parse(fullPath);
+      }
+    });
+
+    return componentsJs;
+  }
+
+  /**
+   * Identifies which components are actively referenced (used) by entry point files
+   * (pages, main.app.js, global files, index.html) or transitively by other used components.
+   * @param {Map&lt;string, string[]>} classNameMap
+   * @param {Map&lt;string, string>} pathToClassName
+   * @param {Map&lt;string, string[]>} graph
+   * @returns {Set&lt;string>} Set of component class names that are used.
+   * @private
+   */
+  findUsedComponents(classNameMap, pathToClassName, graph) {
+    const entryFiles = [];
+    const pageDir = path.join(this.srcDir, 'pages');
+    const globalDir = path.join(this.srcDir, 'global');
+    const guardsDir = path.join(this.srcDir, 'guards');
+    const mainFile = path.join(this.srcDir, 'main.app.js');
+    const indexHtml = path.join(this.rootDir, 'index.html');
+
+    const scanFiles = (dir, ext) => {
+      if (!fs.existsSync(dir)) return;
+      fs.readdirSync(dir).forEach((file) => {
+        const fullPath = path.join(dir, file);
+        if (fs.statSync(fullPath).isDirectory()) {
+          scanFiles(fullPath, ext);
+        } else if (file.endsWith(ext)) {
+          entryFiles.push(fullPath);
+        }
+      });
+    };
+
+    scanFiles(pageDir, '.page.js');
+    scanFiles(globalDir, '.js');
+    scanFiles(guardsDir, '.js');
+
+    if (fs.existsSync(mainFile)) {
+      entryFiles.push(mainFile);
     }
+    if (fs.existsSync(indexHtml)) {
+      entryFiles.push(indexHtml);
+    }
+
+    // If no entry points exist in project (e.g. isolated component unit tests), return all components
+    if (entryFiles.length === 0) {
+      return new Set(classNameMap.keys());
+    }
+
+    const toClassName = (name) => {
+      const base = name.replace(/\.component\.js$/, '');
+      return base
+        .split(/[-_]/)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join('');
+    };
+
+    const rootComponents = new Set();
+
+    entryFiles.forEach((filePath) => {
+      if (!fs.existsSync(filePath)) return;
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      // 1. Scan template tags
+      const tagRegex = /&lt;([a-zA-Z0-9_-]+)\b/g;
+      let match;
+      while ((match = tagRegex.exec(content)) !== null) {
+        const rawTag = match[1];
+        if (classNameMap.has(rawTag)) {
+          rootComponents.add(rawTag);
+        } else {
+          const className = toClassName(rawTag);
+          if (classNameMap.has(className)) {
+            rootComponents.add(className);
+          }
+        }
+      }
+
+      // 2. Scan JS imports
+      const importRegex = /import\s+(?:[\s\w$,{}*]*?\s+from\s+['"](.*?)['"]|['"](.*?)['"]);?/g;
+      while ((match = importRegex.exec(content)) !== null) {
+        const importSpecifier = match[1] || match[2];
+        if (importSpecifier &amp;&amp; importSpecifier.startsWith('.')) {
+          let resolved = path.resolve(path.dirname(filePath), importSpecifier);
+          if (!resolved.endsWith('.js')) {
+            if (fs.existsSync(`${resolved}.component.js`)) {
+              resolved = `${resolved}.component.js`;
+            } else if (fs.existsSync(`${resolved}.js`)) {
+              resolved = `${resolved}.js`;
+            }
+          }
+          const targetClassName = pathToClassName.get(resolved);
+          if (targetClassName) {
+            rootComponents.add(targetClassName);
+          }
+        }
+      }
+    });
+
+    // BFS transitive dependency traversal
+    const usedComponents = new Set(rootComponents);
+    const queue = Array.from(rootComponents);
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const deps = graph.get(current) || [];
+      deps.forEach((dep) => {
+        if (!usedComponents.has(dep)) {
+          usedComponents.add(dep);
+          queue.push(dep);
+        }
+      });
+    }
+
+    return usedComponents;
+  }
+
+  /**
+   * Processes all pages in the src/pages folder recursively.
+   * @returns {{pagesJs: string, registrations: string}} The compiled pages code and their registrations.
+   * @private
+   */
+  processPages() {
+    let pagesJs = '';
+    let registrations = '';
+    const pageDir = path.join(this.srcDir, 'pages');
+
+    const scan = (dir) => {
+      if (!fs.existsSync(dir)) return;
+
+      fs.readdirSync(dir).forEach((file) => {
+        const fullPath = path.join(dir, file);
+
+        if (fs.statSync(fullPath).isDirectory()) {
+          scan(fullPath);
+        } else if (file.endsWith('.page.js')) {
+          logger.info(`[Compiling Page] ${file}`);
+
+          const name = path
+            .basename(file, '.page.js')
+            .split(/[-_]/)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join('');
+
+          pagesJs += this.componentParser.parse(fullPath, 'page');
+          registrations += `app.registerPage('${name}', ${name});\n`;
+        }
+      });
+    };
+
+    scan(pageDir);
+
+    return { pagesJs, registrations };
+  }
+
+  /**
+   * Processes the main application entry point.
+   * @param {string} registrations - The bridge and page registration code to inject.
+   * @returns {string} The wrapped main application code.
+   * @private
+   */
+
+  /**
+   * Compiles a single component file.
+   * @param {string} filePath
+   * @returns {string}
+   */
+  compileComponent(filePath) {
+    return this.componentParser.parse(filePath);
+  }
+
+  /**
+   * Compiles a single page file.
+   * @param {string} filePath
+   * @returns {string}
+   */
+  compilePage(filePath) {
+    return this.componentParser.parse(filePath, 'page');
+  }
+
+  /**
+   * Processes the main application file.
+   * @param {Array&lt;string>} registrations - Mapped component registration lines.
+   */
+  processMain(registrations) {
+    const mainFile = path.join(this.srcDir, 'main.app.js');
+
+    if (fs.existsSync(mainFile)) {
+      let main = replaceEnvVariables(fs.readFileSync(mainFile, 'utf-8')).replace(
+        /import\s+(?:[\s\w$,{}*]*?\s+from\s+['"].*?['"]|['"].*?['"]);?\r?\n?/g,
+        '',
+      );
+
+      if (registrations) {
+        let appName = 'app';
+
+        const appMatch = main.match(/(?:const|let|var)?\s*([\w$.]+)\s*=\s*new\s+AvenxApp\(/);
+
+        if (appMatch) {
+          appName = appMatch[1].trim();
+        }
+
+        if (appName !== 'app') {
+          registrations = registrations.replace(/\bapp\.register/g, `${appName}.register`);
+        }
+
+        if (main.includes('// @avenx-inject')) {
+          main = main.replace('// @avenx-inject', registrations);
+        } else {
+          const appDeclRegex = /((?:const|let|var)?\s*[\w$.]+\s*=\s*new\s+AvenxApp\([\s\S]*?\);?)/;
+
+          if (appDeclRegex.test(main)) {
+            main = main.replace(appDeclRegex, `$1\n${registrations}`);
+          }
+        }
+      }
+
+      return `\n(function(){\n${main}\n})();`;
+    }
+
+    return '';
+  }
 }
 
-module.exports = AvenxCompiler;
+export default AvenxCompiler;
 </code></pre>
         </article>
     </section>
@@ -326,13 +713,13 @@ module.exports = AvenxCompiler;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

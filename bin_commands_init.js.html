@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: bin/commands/init.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: bin/commands/init.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { readTemplate } from '../utils.js';
+import { runWizard } from '../wizard.js';
+import { getInitialHtml } from './serve.js';
+import { bold, cyan, green } from '../colors.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8'));
+
+/**
+ * Initializes a new Avenx project structure.
+ * @param {object} cli - AvenxCLI instance.
+ * @param {string[]} [args] - CLI arguments.
+ */
+export async function initProject(cli, args = []) {
+  const { stylePreprocessor, layoutTemplate, isInteractive } = await runWizard(args);
+
+  console.log(bold(cyan(`🚀 Initializing new Avenx-JS project (Style: ${stylePreprocessor}, Layout: ${layoutTemplate})...`)));
+
+  // Write avenx.config.json if preprocessor option is configured
+  const configPath = path.join(cli.baseDir, 'avenx.config.json');
+  if (!fs.existsSync(configPath)) {
+    const userConfig = {
+      style: {
+        preprocessor: stylePreprocessor,
+      },
+    };
+    fs.writeFileSync(configPath, JSON.stringify(userConfig, null, 2) + '\n');
+    console.log('  Created: avenx.config.json');
+    cli.config = { ...cli.config, ...userConfig };
+  }
+
+  const dirs = [
+    `${cli.config.srcDir}/components`,
+    `${cli.config.srcDir}/pages`,
+    `${cli.config.srcDir}/global`,
+    `${cli.config.srcDir}/guards`,
+    cli.config.distDir,
+    '.vscode',
+  ];
+
+  dirs.forEach((dir) => {
+    const fullPath = path.join(cli.baseDir, dir);
+    const created = fs.mkdirSync(fullPath, { recursive: true });
+    if (created) {
+      console.log(`  Created: ${dir}`);
+    }
+  });
+
+  // Create initial .vscode files
+  const jsConfigPath = path.join(cli.baseDir, '.vscode/jsconfig.json');
+  if (!fs.existsSync(jsConfigPath)) {
+    const template = readTemplate(cli.baseDir, cli.config, cli.frameworkDir, 'vscode', 'jsconfig.json.template');
+    fs.writeFileSync(jsConfigPath, template);
+    console.log('  Created: .vscode/jsconfig.json');
+  }
+
+  const settingsPath = path.join(cli.baseDir, '.vscode/settings.json');
+  if (!fs.existsSync(settingsPath)) {
+    const template = readTemplate(cli.baseDir, cli.config, cli.frameworkDir, 'vscode', 'settings.json.template');
+    fs.writeFileSync(settingsPath, template);
+    console.log('  Created: .vscode/settings.json');
+  }
+
+  // Create initial index.html
+  const indexHtmlPath = path.join(cli.baseDir, 'index.html');
+  if (!fs.existsSync(indexHtmlPath)) {
+    fs.writeFileSync(indexHtmlPath, getInitialHtml(cli));
+    console.log('  Created: index.html');
+  }
+
+  // Create initial main.app.js
+  const mainAppPath = path.join(cli.baseDir, cli.config.srcDir, 'main.app.js');
+  if (!fs.existsSync(mainAppPath)) {
+    if (layoutTemplate === 'routing') {
+      fs.writeFileSync(
+        mainAppPath,
+        "import { AvenxApp } from 'avenx-core/runtime';\n" +
+          "import Navbar from './components/navbar/navbar.component.js';\n\n" +
+          "const app = new AvenxApp({ target: '#app' });\n\n" +
+          "app.register('Navbar', Navbar);\n\n" +
+          'app.initRouter({\n' +
+          "  '': 'Home',\n" +
+          "  '#/': 'Home',\n" +
+          "  '#/about': 'About',\n" +
+          '});\n',
+      );
+    } else {
+      fs.writeFileSync(
+        mainAppPath,
+        "import { AvenxApp } from 'avenx-core/runtime';\n\nconst app = new AvenxApp({ target: '#app' });\n",
+      );
+    }
+    console.log(`  Created: ${cli.config.srcDir}/main.app.js`);
+  }
+
+  if (layoutTemplate === 'routing') {
+    const homePageJsPath = path.join(cli.baseDir, cli.config.srcDir, 'pages', 'home.page.js');
+    const homePageCssPath = path.join(cli.baseDir, cli.config.srcDir, 'pages', 'home.page.css');
+    const aboutPageJsPath = path.join(cli.baseDir, cli.config.srcDir, 'pages', 'about.page.js');
+    const aboutPageCssPath = path.join(cli.baseDir, cli.config.srcDir, 'pages', 'about.page.css');
+
+    const navbarDir = path.join(cli.baseDir, cli.config.srcDir, 'components', 'navbar');
+    if (!fs.existsSync(navbarDir)) {
+      fs.mkdirSync(navbarDir, { recursive: true });
+    }
+    const navbarJsPath = path.join(navbarDir, 'navbar.component.js');
+    const navbarCssPath = path.join(navbarDir, 'navbar.component.css');
+
+    // Write Home page
+    if (!fs.existsSync(homePageJsPath)) {
+      fs.writeFileSync(
+        homePageJsPath,
+        '&lt;state title="Home" />\n\n' +
+          '&lt;Navbar />\n\n' +
+          '&lt;div class="page-container">\n' +
+          '    &lt;h1>Home Page&lt;/h1>\n' +
+          '    &lt;p>Welcome to the home page of your new Avenx application!&lt;/p>\n' +
+          '    &lt;p>This layout template demonstrates hash-based routing using AvenxRouter.&lt;/p>\n' +
+          '&lt;/div>\n',
+      );
+      console.log(`  Created: ${cli.config.srcDir}/pages/home.page.js`);
+    }
+    if (!fs.existsSync(homePageCssPath)) {
+      fs.writeFileSync(
+        homePageCssPath,
+        '&lt;@css>\n' +
+          '.page-container {\n' +
+          '    padding: 20px;\n' +
+          '    font-family: sans-serif;\n' +
+          '    max-width: 800px;\n' +
+          '    margin: 0 auto;\n' +
+          '}\n' +
+          '&lt;/@css>\n',
+      );
+      console.log(`  Created: ${cli.config.srcDir}/pages/home.page.css`);
+    }
+
+    // Write About page
+    if (!fs.existsSync(aboutPageJsPath)) {
+      fs.writeFileSync(
+        aboutPageJsPath,
+        '&lt;state title="About" />\n\n' +
+          '&lt;Navbar />\n\n' +
+          '&lt;div class="page-container">\n' +
+          '    &lt;h1>About Page&lt;/h1>\n' +
+          '    &lt;p>Welcome to the about page.&lt;/p>\n' +
+          '&lt;/div>\n',
+      );
+      console.log(`  Created: ${cli.config.srcDir}/pages/about.page.js`);
+    }
+    if (!fs.existsSync(aboutPageCssPath)) {
+      fs.writeFileSync(
+        aboutPageCssPath,
+        '&lt;@css>\n' +
+          '.page-container {\n' +
+          '    padding: 20px;\n' +
+          '    font-family: sans-serif;\n' +
+          '    max-width: 800px;\n' +
+          '    margin: 0 auto;\n' +
+          '}\n' +
+          '&lt;/@css>\n',
+      );
+      console.log(`  Created: ${cli.config.srcDir}/pages/about.page.css`);
+    }
+
+    // Write Navbar component
+    if (!fs.existsSync(navbarJsPath)) {
+      fs.writeFileSync(
+        navbarJsPath,
+        '&lt;state activeRoute="" />\n\n' +
+          '&lt;nav>\n' +
+          '    &lt;@css container />\n' +
+          '    &lt;a @css link href="#/">Home&lt;/a>\n' +
+          '    &lt;a @css link href="#/about">About&lt;/a>\n' +
+          '&lt;/nav>\n',
+      );
+      console.log(`  Created: ${cli.config.srcDir}/components/navbar/navbar.component.js`);
+    }
+    if (!fs.existsSync(navbarCssPath)) {
+      fs.writeFileSync(
+        navbarCssPath,
+        '&lt;@global>\n' +
+          '    @def primary #6366f1;\n' +
+          '    @def dark #1e1b4b;\n' +
+          '    @def gray #e2e8f0;\n' +
+          '&lt;/@global>\n\n' +
+          '&lt;@css>\n' +
+          '    container {\n' +
+          '        display: flex;\n' +
+          '        gap: 1.5rem;\n' +
+          '        padding: 1rem 2rem;\n' +
+          '        background: @dark;\n' +
+          '        border-bottom: 2px solid @primary;\n' +
+          '    }\n\n' +
+          '    link {\n' +
+          '        color: white;\n' +
+          '        text-decoration: none;\n' +
+          '        font-weight: 500;\n' +
+          '        font-family: sans-serif;\n' +
+          '    }\n\n' +
+          '    link:hover {\n' +
+          '        color: @primary;\n' +
+          '    }\n' +
+          '&lt;/@css>\n',
+      );
+      console.log(`  Created: ${cli.config.srcDir}/components/navbar/navbar.component.css`);
+    }
+  }
+
+  // Create initial package.json
+  const packageJsonPath = path.join(cli.baseDir, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) {
+    const projectName =
+      path
+        .basename(cli.baseDir)
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]/g, '') || 'avenx-app';
+    const packageContent = {
+      name: projectName,
+      version: '1.0.0',
+      type: 'module',
+      scripts: {
+        dev: 'avenx serve',
+        build: 'avenx build',
+        serve: 'avenx serve',
+      },
+      dependencies: {
+        'avenx-core': `^${packageJson.version}`,
+      },
+    };
+    fs.writeFileSync(packageJsonPath, JSON.stringify(packageContent, null, 2) + '\n');
+    console.log('  Created: package.json');
+  }
+
+  // Create initial .gitignore
+  const gitignorePath = path.join(cli.baseDir, '.gitignore');
+
+  if (!fs.existsSync(gitignorePath)) {
+    fs.writeFileSync(gitignorePath, `node_modules/\n${cli.config.distDir}/\n.DS_Store\n`);
+    console.log('  Created: .gitignore');
+  }
+  console.log(green('✅ Project initialized successfully!'));
+  if (isInteractive) {
+    process.stdin.pause();
+  }
+
+  // Create initial .prettierrc
+  const prettierPath = path.join(cli.baseDir, '.prettierrc');
+
+  if (!fs.existsSync(prettierPath)) {
+    const template = readTemplate(cli.baseDir, cli.config, cli.frameworkDir, 'init', '.prettierrc');
+
+    fs.writeFileSync(prettierPath, template);
+
+    console.log('  Created: .prettierrc');
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -27,193 +27,640 @@
     <section>
         <article>
             <pre class="prettyprint source linenums"><code>import { AvenxRouter } from './AvenxRouter.js';
-import { AvenxPage } from './AvenxPage.js';
-import { AvenxComponent } from './AvenxComponent.js';
-import { AvenxError, AvenxErrorCodes } from './AvenxError.js';
+import { AvenxError, AvenxErrorCodes, formatMessage } from './AvenxError.js';
+import { initInspector } from '../tooling/inspect.js';
 import { ProxyHandlerFactory } from '../reactive/proxyHandler.js';
-import { queueJob } from '../reactive/scheduler.js';
+import { DomPatcher } from '../renderer/domPatch.js';
+import { VirtualList } from './VirtualList.js';
+import { AvenxComponent } from './AvenxComponent.js';
+import { LruCache } from '../utils/LruCache.js';
+
+import { logger } from './AvenxLogger.js';
 
 /**
  * The main application class for Avenx.
  * Manages component registration, bridge registration, and mounting.
  */
 export class AvenxApp {
-    /** @type {AvenxComponent[]} @private */
-    #activeComponents = [];
-    /** @type {Element|null} @private */
-    #target = null;
+  /** @type {AvenxComponent[]} @private */
+  #activeComponents = [];
+  /** @type {Element|null} @private */
+  #target = null;
+  /** @type {Function[]} @private */
+  #errorHandlers = [];
+  /** @type {Set&lt;any>} @private */
+  #installedPlugins = new Set();
+  /** @type {LruCache|null} @private */
+  #pageCache = null;
 
-    /**
-     * @param {Object} config - Application configuration.
-     * @param {string} config.target - Selector for the main application container.
-     */
-    constructor(config) {
-        this.#target = document.querySelector(config.target);
-        if (!this.#target) {
-            throw new AvenxError(AvenxErrorCodes.MOUNT_TARGET_NOT_FOUND, config.target);
-        }
-        /** @type {Map&lt;string, typeof AvenxComponent>} */
-        this.components = new Map();
-        /** @type {Map&lt;string, typeof AvenxPage>} */
-        this.pages = new Map();
-        /** @type {Object} */
-        this.bridges = {};
-        /** @type {AvenxRouter|null} */
-        this.router = null;
-        this.updateAll = this.updateAll.bind(this);
+  /**
+   * @param {object} config - Application configuration.
+   * @param {string} config.target - Selector for the main application container.
+   */
+  constructor(config) {
+    this.#target = document.querySelector(config.target);
+    if (!this.#target) {
+      throw new AvenxError(AvenxErrorCodes.MOUNT_TARGET_NOT_FOUND, config.target);
+    }
+    /** @type {Map&lt;string, Function>} */
+    this.components = new Map();
+    this.components.set('VirtualList', VirtualList);
+    /** @type {Map&lt;string, Function>} */
+    this.pages = new Map();
+    /** @type {Map&lt;string, object>} */
+    this.directives = new Map();
+    /** @type {object} */
+    this.bridges = {};
+    /** @type {AvenxRouter|null} */
+    this.router = null;
+    this.updateAll = this.updateAll.bind(this);
+    if (config.logging) {
+      logger.configure(config.logging);
+    }
+    /** @type {boolean} */
+    this.enableProfiling = !!config.enableProfiling;
+    if (this.enableProfiling &amp;&amp; typeof window !== 'undefined') {
+      window.__avenx_enable_profiling = true;
+    }
+    initInspector(this);
+
+    const keepAliveLimit = config.keepAliveLimit !== undefined ? config.keepAliveLimit : 5;
+    this.#pageCache = new LruCache(keepAliveLimit, (pageName, cachedVal) => {
+      if (cachedVal &amp;&amp; cachedVal.pageInstance &amp;&amp; typeof cachedVal.pageInstance.unmount === 'function') {
+        cachedVal.pageInstance.unmount();
+      }
+    });
+  }
+
+  /**
+   * Registers a plugin with the application. Supports synchronous plugins, async installer functions,
+   * dynamic import loader functions, or Promises.
+   * @param {object | Function | Promise} plugin - The plugin to install or async loader function.
+   * @param {object} [options] - Optional configurations for the plugin.
+   * @returns {AvenxApp | Promise&lt;AvenxApp>} The app instance or a Promise resolving to the app instance.
+   */
+  use(plugin, options = {}) {
+    if (this.#installedPlugins.has(plugin)) {
+      logger.warn('Plugin already installed.');
+      return this;
     }
 
-    /**
-     * Registers a component with the application.
-     * @param {string} name - The name of the component.
-     * @param {typeof AvenxComponent} compClass - The component class.
-     */
-    register(name, compClass) {
-        this.components.set(name, compClass);
+    const installResolved = (resolvedPlugin) => {
+      let target = resolvedPlugin;
+      if (target &amp;&amp; target.__esModule &amp;&amp; target.default !== undefined) {
+        target = target.default;
+      } else if (
+        target &amp;&amp;
+        typeof target === 'object' &amp;&amp;
+        'default' in target &amp;&amp;
+        (typeof target.default === 'function' || (target.default &amp;&amp; typeof target.default.install === 'function'))
+      ) {
+        target = target.default;
+      }
+
+      if (!target) return this;
+
+      if (this.#installedPlugins.has(target)) {
+        logger.warn('Plugin already installed.');
+        return this;
+      }
+      this.#installedPlugins.add(target);
+
+      if (typeof target === 'function') {
+        return target(this, options);
+      } else if (target &amp;&amp; typeof target.install === 'function') {
+        return target.install(this, options);
+      } else {
+        throw new Error('Plugin must be a function or an object with an install method.');
+      }
+    };
+
+    if (plugin &amp;&amp; typeof plugin.then === 'function') {
+      this.#installedPlugins.add(plugin);
+      return plugin.then((res) => {
+        const out = installResolved(res);
+        return out &amp;&amp; typeof out.then === 'function' ? out.then(() => this) : this;
+      });
     }
 
-    /**
-     * Registers a page with the application.
-     * @param {string} name - The name of the page.
-     * @param {typeof AvenxPage} pageClass - The page class.
-     */
-    registerPage(name, pageClass) {
-        if (this.pages.has(name)) {
-            console.warn(
-                `Page "${name}" is already registered and will be overwritten.`
-            );
-        }
+    if (typeof plugin === 'function') {
+      this.#installedPlugins.add(plugin);
+      let res;
+      try {
+        res = plugin(this, options);
+      } catch {
+        res = plugin();
+      }
 
-        this.pages.set(name, pageClass);
-    }
-    /**
-     * Initializes the router for the application.
-     * @param {Object&lt;string, string>} routes - Route mapping.
-     * @returns {AvenxRouter} The router instance.
-     */
-    initRouter(routes) {
-        this.router = new AvenxRouter(this, routes);
-        this.router.start();
-        return this.router;
-    }
-
-    /**
-     * Registers a bridge with the application.
-     * Bridges provide shared state and logic across components.
-     * @param {string} name - The name of the bridge.
-     * @param {Object|Function} bridgeData - The bridge data or constructor.
-     */
-    registerBridge(name, bridgeData) {
-
-        if (Object.prototype.hasOwnProperty.call(this.bridges, name)) {
-            const availableBridges = Object.keys(this.bridges).join(',');
-            const suggestion = `Please use a unique name`;
-            throw new AvenxError(
-                AvenxErrorCodes.BRIDGE_ALREADY_EXISTS,
-                name,
-                availableBridges || 'none',
-                suggestion
-            );
-        }
-
-        let instance = bridgeData;
-
-        if (typeof bridgeData === 'function') {
-            try {
-                instance = new bridgeData();
-            } catch (e) {
-                // Keep object-style bridge behavior if construction is not possible.
-            }
-        }
-
-        const handlerFactory = new ProxyHandlerFactory({
-            onChange: () => queueJob(this.updateAll)
+      if (res &amp;&amp; typeof res.then === 'function') {
+        return res.then((resolved) => {
+          if (resolved !== undefined &amp;&amp; resolved !== null) {
+            const out = installResolved(resolved);
+            return out &amp;&amp; typeof out.then === 'function' ? out.then(() => this) : this;
+          }
+          return this;
         });
-        const reactiveState = new Proxy(instance, handlerFactory.create());
-        this.bridges[name] = reactiveState;
+      }
+      return this;
     }
 
-    /**
-     * Updates all active components in the application.
-     */
-    updateAll() {
-        this.#activeComponents.forEach(comp => comp.update());
+    if (plugin &amp;&amp; typeof plugin.install === 'function') {
+      this.#installedPlugins.add(plugin);
+      const res = plugin.install(this, options);
+      if (res &amp;&amp; typeof res.then === 'function') {
+        return res.then(() => this);
+      }
+      return this;
     }
 
-    /**
-     * Mounts a page to the main application container.
-     * @param {string} name - The name of the page to mount.
-     * @param {Object} [params={}] - Dynamic route parameters to inject.
-     */
-    mountPage(name, params = {}) {
-        const PageClass = this.pages.get(name);
-        if (!PageClass) {
-            throw new AvenxError(AvenxErrorCodes.PAGE_NOT_FOUND, name);
+    throw new Error('Plugin must be a function or an object with an install method.');
+  }
+
+  /**
+   * Registers a global mixin.
+   * @param {object} mixin - The mixin definition.
+   * @returns {AvenxApp} The app instance.
+   */
+  mixin(mixin) {
+    AvenxComponent.mixin(mixin);
+    return this;
+  }
+
+  /**
+   * Registers an application-wide error handler.
+   * @param {function(Error, AvenxComponent, string): void} callback - The error callback.
+   * @returns {AvenxApp} The app instance.
+   */
+  onError(callback) {
+    if (typeof callback === 'function') {
+      this.#errorHandlers.push(callback);
+    }
+    return this;
+  }
+
+  /**
+   * Invokes all registered error handlers safely.
+   * @param {Error} error - The error that occurred.
+   * @param {AvenxComponent} component - The component instance where the error occurred.
+   * @param {string} origin - Description of the origin/lifecycle/event.
+   * @private
+   */
+  _handleError(error, component, origin) {
+    for (const handler of this.#errorHandlers) {
+      try {
+        handler(error, component, origin);
+      } catch (e) {
+        logger.error(`Error in global error handler: ${e.message || e}`);
+      }
+    }
+  }
+
+  /**
+   * Registers a component with the application.
+   * @param {string} name - The name of the component.
+   * @param {Function} compClass - The component class.
+   */
+  register(name, compClass) {
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      const msg = `Component name must be a non-empty string. received: "${JSON.stringify(name)}"`;
+      logger.warn(msg);
+      throw new Error(msg);
+    }
+
+    const isFunction = typeof compClass === 'function';
+    const extendsBase = isFunction &amp;&amp; (compClass === AvenxComponent || compClass.prototype instanceof AvenxComponent);
+
+    if (!isFunction || !extendsBase) {
+      const receivedType = isFunction ? (compClass.name || 'anonymous function') : typeof compClass;
+      const msg = `Component "${name}" must be a class extending AvenxComponent. received: "${receivedType}"`;
+      logger.warn(msg);
+      throw new Error(msg);
+
+    }
+
+    if (this.components.has(name)) {
+      throw new AvenxError(AvenxErrorCodes.COMPILER_DUPLICATE_COMPONENT_NAME, `  "${name}"`);
+    }
+    this.components.set(name, compClass);
+  }
+
+  /**
+   * Registers a page with the application.
+   * @param {string} name - The name of the page.
+   * @param {Function} pageClass - The page class.
+   */
+  registerPage(name, pageClass) {
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      const msg = `Page name must be a non-empty string. received: "${JSON.stringify(name)}"`;
+      logger.warn(msg);
+      throw new Error(msg);
+    }
+
+    const isFunction = typeof pageClass === 'function';
+    const extendsBase = isFunction &amp;&amp; (pageClass === AvenxComponent || pageClass.prototype instanceof AvenxComponent);
+
+    if (!isFunction || !extendsBase) {
+      const receivedType = isFunction ? (pageClass.name || 'anonymous function') : typeof pageClass;
+      const msg = `Page "${name}" must be a class extending AvenxComponent. received: "${receivedType}"`;
+      logger.warn(msg);
+      throw new Error(msg);
+
+    }
+
+    if (this.pages.has(name)) {
+      logger.warn(formatMessage(AvenxErrorCodes.PAGE_ALREADY_REGISTERED, name));
+    }
+
+    this.pages.set(name, pageClass);
+  }
+
+  /**
+   * Returns the names of all registered components.
+   * @returns {string[]} Registered component names.
+   */
+  getRegisteredComponents() {
+    return Array.from(this.components.keys());
+  }
+
+  /**
+   * Returns the names of all registered pages.
+   * @returns {string[]} Registered page names.
+   */
+  getRegisteredPages() {
+    return Array.from(this.pages.keys());
+  }
+
+
+
+  /**
+   * Retrieves the currently active page component instance.
+   * @returns {AvenxComponent|null}
+   */
+  get activePage() {
+    return this.#activeComponents[this.#activeComponents.length - 1] || null;
+  }
+
+  /**
+   * Registers a custom directive with the application.
+   * @param {string} name - The name of the directive.
+   * @param {object} definition - The directive definition with lifecycle hooks.
+   * @returns {AvenxApp} The app instance.
+   */
+  directive(name, definition) {
+    this.directives.set(name, definition);
+    return this;
+  }
+
+  /**
+   * Initializes the router for the application.
+   * @param {Object&lt;string, string>} routes - Route mapping.
+   * @param {object} [options] - Router options.
+   * @returns {AvenxRouter} The router instance.
+   */
+  initRouter(routes, options = {}) {
+    this.router = new AvenxRouter(this, routes, options);
+    this.router.start();
+    return this.router;
+  }
+
+  /**
+   * Registers a bridge with the application.
+   * Bridges provide shared state and logic across components.
+   * @param {string} name - The name of the bridge.
+   * @param {object | Function} bridgeData - The bridge data or constructor.
+   */
+  registerBridge(name, bridgeData) {
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      const msg = `Bridge name must be a non-empty string. received: "${JSON.stringify(name)}"`;
+      logger.warn(msg);
+      throw new Error(msg);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(this.bridges, name)) {
+      const availableBridges = Object.keys(this.bridges).join(',');
+      const suggestion = `Please use a unique name`;
+      throw new AvenxError(AvenxErrorCodes.BRIDGE_ALREADY_EXISTS, name, availableBridges || 'none', suggestion);
+    }
+
+    let instance = bridgeData;
+
+    if (typeof bridgeData === 'function') {
+      try {
+        instance = new bridgeData();
+      } catch (err) {
+        throw new AvenxError(AvenxErrorCodes.BRIDGE_CONSTRUCTION_FAILED, name, err.message || err);
+      }
+    }
+
+    const handlerFactory = new ProxyHandlerFactory({
+      onChange: () => { },
+    });
+    const reactiveState = new Proxy(instance, handlerFactory.create());
+    this.bridges[name] = reactiveState;
+  }
+
+  /**
+   * Updates all active components in the application.
+   */
+  updateAll() {
+    this.#activeComponents.forEach((comp) => comp.update());
+  }
+
+  /**
+   * Mounts a page to the main application container.
+   * @param {string} name - The name of the page to mount.
+   * @param {object} [params] - Dynamic route parameters to inject.
+   * @param {object} [options] - Mount options, e.g., transition options.
+   */
+  mountPage(name, params = {}, options = {}) {
+    const PageClass = this.pages.get(name);
+    if (!PageClass) {
+      throw new AvenxError(AvenxErrorCodes.PAGE_NOT_FOUND, name);
+    }
+    const LayoutClass = options.layout ? this.pages.get(options.layout) : null;
+    if (options.layout &amp;&amp; !LayoutClass) {
+      throw new AvenxError(AvenxErrorCodes.PAGE_NOT_FOUND, options.layout);
+    }
+
+    if (this.#target) {
+      const activeLayout = this.#activeComponents[0];
+      const activeLayoutName = activeLayout ? activeLayout.$pageName : null;
+      const activeChild = this.#activeComponents[1];
+
+      const isSameLayout = activeLayout &amp;&amp; LayoutClass &amp;&amp; activeLayout instanceof LayoutClass;
+      const isSamePage = !options.layout &amp;&amp; activeLayout &amp;&amp; activeLayout instanceof PageClass;
+
+      const targetToUpdate = isSameLayout ? (activeChild &amp;&amp; activeChild instanceof PageClass ? activeChild : null) : (isSamePage ? activeLayout : null);
+
+      if (targetToUpdate) {
+        targetToUpdate.$app = this;
+        if (targetToUpdate.params) {
+          for (const key of Object.keys(targetToUpdate.params)) {
+            if (!(key in params)) {
+              delete targetToUpdate.state[key];
+              delete targetToUpdate.params[key];
+            }
+          }
+        } else {
+          targetToUpdate.params = {};
         }
-        if (this.#target) {
-            const activePage = this.#activeComponents[0];
-            if (activePage &amp;&amp; activePage instanceof PageClass) {
-                // Delete keys from previous params that are not in new params
-                if (activePage.params) {
-                    for (const key of Object.keys(activePage.params)) {
-                        if (!(key in params)) {
-                            delete activePage.state[key];
-                            delete activePage.params[key];
-                        }
-                    }
-                } else {
-                    activePage.params = {};
-                }
 
-                // Update or set new params
-                for (const [key, val] of Object.entries(params)) {
-                    activePage.state[key] = val;
-                    activePage.params[key] = val;
-                }
-                return;
+        for (const [key, val] of Object.entries(params)) {
+          targetToUpdate.state[key] = val;
+          targetToUpdate.params[key] = val;
+        }
+
+        if (typeof targetToUpdate.onActivate === 'function') {
+          try {
+            targetToUpdate.onActivate(params);
+          } catch (err) {
+            logger.error('Error in onActivate hook:', err);
+          }
+        }
+        return;
+      }
+
+      const transitionName = options.transition;
+      let unmountPromise = null;
+      const toUnmount = [];
+      if (isSameLayout) {
+        if (activeChild) toUnmount.push(activeChild);
+      } else {
+        if (activeChild) toUnmount.push(activeChild);
+        if (activeLayout) toUnmount.push(activeLayout);
+      }
+
+      const unmountPromises = [];
+      for (const comp of toUnmount) {
+        if (comp === activeLayout &amp;&amp; comp._isKeepAlive &amp;&amp; this.#pageCache &amp;&amp; activeLayoutName) {
+          const domFragment = document.createDocumentFragment();
+          const children = Array.from(this.#target.childNodes);
+          children.forEach((child) => domFragment.appendChild(child));
+
+          delete this.#target.__avenx_comp_instance;
+          comp.__setMountTarget(domFragment, true);
+
+          if (typeof comp.onDeactivate === 'function') {
+            try {
+              comp.onDeactivate();
+            } catch (err) {
+              logger.error('Error in onDeactivate hook:', err);
+            }
+          }
+
+          this.#pageCache.set(activeLayoutName, {
+            pageInstance: comp,
+            domFragment: domFragment
+          });
+        } else {
+          if (typeof comp.unmount === 'function') {
+            const res = comp.unmount();
+            if (res instanceof Promise) {
+              unmountPromises.push(res);
+            }
+          }
+        }
+      }
+
+      if (unmountPromises.length > 0) {
+        unmountPromise = Promise.all(unmountPromises);
+      }
+
+      const proceed = () => {
+        if (!isSameLayout) {
+          this.#activeComponents = [];
+        } else {
+          this.#activeComponents = [activeLayout];
+        }
+
+        let mountTarget = this.#target;
+        let wrapper = null;
+
+        if (isSameLayout) {
+          wrapper = activeLayout.$element ? activeLayout.$element.querySelector('[data-ax-router-view]') : null;
+          if (wrapper) {
+            mountTarget = wrapper;
+          } else {
+            // Fallback if slot wasn't rendered yet
+            wrapper = document.createElement('div');
+            wrapper.setAttribute('data-ax-router-view', 'true');
+            activeLayout.$element.appendChild(wrapper);
+            mountTarget = wrapper;
+          }
+        }
+
+        let exitWrapper = null;
+        if (transitionName &amp;&amp; mountTarget.childNodes.length > 0 &amp;&amp; mountTarget.parentNode) {
+          exitWrapper = document.createElement('div');
+          exitWrapper.className = 'ax-page-exit-wrapper';
+          const children = Array.from(mountTarget.childNodes);
+          children.forEach((child) => exitWrapper.appendChild(child));
+          mountTarget.parentNode.insertBefore(exitWrapper, mountTarget);
+        }
+
+        if (!isSameLayout) {
+          mountTarget.innerHTML = '';
+        }
+
+        const setupPage = (PClass, pName, pParams, mTarget, isTopLevel) => {
+          let inst;
+          const isCached = isTopLevel &amp;&amp; this.#pageCache &amp;&amp; this.#pageCache.has(pName);
+          if (isCached) {
+            const cached = this.#pageCache.get(pName);
+            this.#pageCache.delete(pName);
+            inst = cached.pageInstance;
+            const domFragment = cached.domFragment;
+
+            mTarget.appendChild(domFragment);
+            inst.__setMountTarget(mTarget, true);
+          } else {
+            inst = new PClass(this.bridges, this.components);
+            inst.$app = this;
+            inst.$pageName = pName;
+            inst._isKeepAlive = !!options.keepAlive;
+
+            inst.params = pParams;
+            for (const [key, val] of Object.entries(pParams)) {
+              inst.state[key] = val;
             }
 
-            // Cleanup current components
-            this.#activeComponents.forEach(comp => {
-                if (typeof comp.unmount === 'function') {
-                    comp.unmount();
-                }
+            inst.mount(mTarget);
+          }
+
+          if (isCached) {
+            inst.params = pParams;
+            for (const [key, val] of Object.entries(pParams)) {
+              inst.state[key] = val;
+            }
+          }
+
+          if (typeof inst.onActivate === 'function') {
+            try {
+              inst.onActivate(pParams);
+            } catch (err) {
+              logger.error('Error in onActivate hook:', err);
+            }
+          }
+          this.#activeComponents.push(inst);
+          return inst;
+        };
+
+        if (LayoutClass &amp;&amp; !isSameLayout) {
+          wrapper = document.createElement('div');
+          wrapper.setAttribute('data-ax-router-view', 'true');
+          this.#target.appendChild(wrapper);
+          const layoutInst = setupPage(LayoutClass, options.layout, params, this.#target, true);
+
+          // Re-find wrapper in case it moved to slot
+          wrapper = layoutInst.$element ? layoutInst.$element.querySelector('[data-ax-router-view]') : wrapper;
+          setupPage(PageClass, name, params, wrapper, false);
+        } else if (LayoutClass &amp;&amp; isSameLayout) {
+          wrapper.innerHTML = '';
+          setupPage(PageClass, name, params, wrapper, false);
+        } else {
+          setupPage(PageClass, name, params, this.#target, true);
+        }
+
+        if (transitionName) {
+          const patcher = new DomPatcher();
+          if (exitWrapper) {
+            patcher.leave(exitWrapper, transitionName, () => {
+              if (exitWrapper.parentNode) {
+                exitWrapper.parentNode.removeChild(exitWrapper);
+              }
             });
-            this.#activeComponents = [];
-            this.#target.innerHTML = '';
-
-            // Pages receive both bridges and the component registry for child mounting
-            const pageInstance = new PageClass(this.bridges, this.components);
-
-            pageInstance.params = params;
-            for (const [key, val] of Object.entries(params)) {
-                pageInstance.state[key] = val;
-            }
-
-            pageInstance.mount(this.#target);
-            this.#activeComponents.push(pageInstance);
+          }
+          const targetForTransition = wrapper || this.#target;
+          const newPageChildren = Array.from(targetForTransition.childNodes).filter(
+            (node) => node.nodeType === Node.ELEMENT_NODE,
+          );
+          newPageChildren.forEach((child) => {
+            patcher.enter(child, transitionName);
+          });
         }
+      };
+
+      if (unmountPromise) {
+        unmountPromise.then(proceed);
+      } else {
+        proceed();
+      }
     }
-
-    /**
-     * Mounts a component to a target element.
-     * @param {string} name - The name of the component to mount.
-     * @param {string|null} [targetSelector=null] - Optional selector for the mount target.
-     */
-    mount(name, targetSelector = null) {
-        const Comp = this.components.get(name);
-        if (!Comp) {
-            const registeredList = Array.from(this.components.keys()).join(', ');
-            throw new AvenxError(AvenxErrorCodes.COMPONENT_NOT_FOUND, name, registeredList);
-        }
-        const target = targetSelector ? document.querySelector(targetSelector) : this.#target;
-        if (!target) {
-            throw new AvenxError(AvenxErrorCodes.MOUNT_TARGET_NOT_FOUND, targetSelector || 'default target');
-        }
-        const compInstance = new Comp(this.bridges);
-        compInstance.mount(target);
-        this.#activeComponents.push(compInstance);
+  }
+  /**
+   * Mounts a component to a target element.
+   * @param {string} name - The name of the component to mount.
+   * @param {string|null} [targetSelector] - Optional selector for the mount target.
+   */
+  mount(name, targetSelector = null) {
+    const Comp = this.components.get(name);
+    if (!Comp) {
+      const registeredList = Array.from(this.components.keys()).join(', ');
+      throw new AvenxError(AvenxErrorCodes.COMPONENT_NOT_FOUND, name, registeredList);
     }
+    const target = targetSelector ? document.querySelector(targetSelector) : this.#target;
+    if (!target) {
+      throw new AvenxError(AvenxErrorCodes.MOUNT_TARGET_NOT_FOUND, targetSelector || 'default target');
+    }
+    const compInstance = new Comp(this.bridges);
+    compInstance.$app = this;
+    compInstance.mount(target);
+    this.#activeComponents.push(compInstance);
+  }
+
+  /**
+   * Programmatically clears cached KeepAlive component instances.
+   * If componentName is specified, invalidates only that cached instance.
+   * If omitted, purges all cached entries.
+   * Unmounts cached instances and destroys their cached DOM trees.
+   * @param {string} [componentName] - Optional name of component/page to clear from cache.
+   * @returns {boolean} True if cache entries were evicted, false otherwise.
+   */
+  clearKeepAliveCache(componentName) {
+    if (!this.#pageCache) return false;
+
+    let evicted = false;
+    if (componentName !== undefined &amp;&amp; componentName !== null &amp;&amp; componentName !== '') {
+      let keyToRemove = null;
+      if (this.#pageCache.has(componentName)) {
+        keyToRemove = componentName;
+      } else {
+        for (const [key, cached] of this.#pageCache.cache.entries()) {
+          if (
+            cached &amp;&amp;
+            cached.pageInstance &amp;&amp;
+            (cached.pageInstance.$pageName === componentName ||
+              cached.pageInstance.constructor?.name === componentName)
+          ) {
+            keyToRemove = key;
+            break;
+          }
+        }
+      }
+
+      if (keyToRemove) {
+        const cached = this.#pageCache.get(keyToRemove);
+        this.#pageCache.delete(keyToRemove);
+        if (cached &amp;&amp; cached.pageInstance &amp;&amp; typeof cached.pageInstance.unmount === 'function') {
+          cached.pageInstance.unmount();
+        }
+        evicted = true;
+      }
+    } else {
+      const entries = Array.from(this.#pageCache.cache.entries());
+      if (entries.length > 0) {
+        evicted = true;
+      }
+      for (const [key, cached] of entries) {
+        this.#pageCache.delete(key);
+        if (cached &amp;&amp; cached.pageInstance &amp;&amp; typeof cached.pageInstance.unmount === 'function') {
+          cached.pageInstance.unmount();
+        }
+      }
+      this.#pageCache.clear();
+    }
+    return evicted;
+  }
 }
 
 </code></pre>
@@ -226,13 +673,13 @@ export class AvenxApp {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

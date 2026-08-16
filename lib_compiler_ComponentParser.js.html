@@ -26,9 +26,121 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>const fs = require('fs');
-const path = require('path');
-const ExpressionParser = require('./expressionParser');
+            <pre class="prettyprint source linenums"><code>import fs from 'fs';
+import path from 'path';
+import ExpressionParser from './expressionParser.js';
+import { logger } from '../core/runtime/AvenxLogger.js';
+import { AvenxErrorCodes } from '../core/runtime/AvenxError.js';
+import { RESERVED_INSTANCE_KEYS } from '../core/runtime/AvenxComponent.js';
+import { TemplateValidationError, BuildError } from './errors/index.js';
+import { reportWarning } from './utils/warningReporter.js';
+import { replaceEnvVariables } from '../env.js';
+import { processBindDirectives } from '../core/utils/templateUtils.js';
+import loadConfig, { resolvePathAlias } from '../config.js';
+
+/**
+ * The set of HTML tags that are void (self-closing / no children) by
+ * default. Custom tags can be added on top of this list on a per-project
+ * basis via the `voidTags` array in `avenx.config.json` (see
+ * {@link getCustomVoidTags} and issue #198).
+ * @type {string[]}
+ */
+const DEFAULT_VOID_TAGS = [
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
+];
+
+/**
+ * Builds the effective set of void tags for a parse/serialize pass by
+ * combining {@link DEFAULT_VOID_TAGS} with any project-specific tags.
+ * @param {string[]} [customVoidTags] - Additional void tag names (lowercase).
+ * @returns {Set&lt;string>}
+ */
+function buildVoidTagsSet(customVoidTags = []) {
+  return new Set([...DEFAULT_VOID_TAGS, ...customVoidTags]);
+}
+
+/**
+ * Cache of resolved `avenx.config.json` contents, keyed by the directory
+ * the search started from, so each component file doesn't re-read and
+ * re-parse the config from disk.
+ * @type {Map&lt;string, object|null>}
+ */
+const configCache = new Map();
+
+/**
+ * Walks up the directory tree from `startDir` looking for an
+ * `avenx.config.json` file, and returns its parsed contents (or `null` if
+ * none is found, or if it fails to parse).
+ * @param {string} startDir - Absolute directory to start searching from.
+ * @returns {object|null}
+ */
+function loadAvenxConfig(startDir) {
+  if (configCache.has(startDir)) {
+    return configCache.get(startDir);
+  }
+
+  let config = null;
+  let currentDir = startDir;
+  while (currentDir) {
+    const configPath = path.join(currentDir, 'avenx.config.json');
+    if (fs.existsSync(configPath)) {
+      try {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      } catch (err) {
+        reportWarning(AvenxErrorCodes.COMPILER_INVALID_CONFIG, new BuildError(AvenxErrorCodes.COMPILER_INVALID_CONFIG, configPath, err.message));
+        config = null;
+      }
+      break;
+    }
+    const parent = path.dirname(currentDir);
+    if (parent === currentDir) {
+      break;
+    }
+    currentDir = parent;
+  }
+
+  configCache.set(startDir, config);
+  return config;
+}
+
+/**
+ * Resolves the list of project-specific void tags declared in
+ * `avenx.config.json` (via a `voidTags` array) for the given component
+ * file, e.g.:
+ * ```json
+ * { "voidTags": ["my-video", "my-icon"] }
+ * ```
+ * @param {string} [filePath] - Absolute path of the component file being compiled.
+ * @returns {string[]} Lowercased, trimmed custom void tag names. Empty if none configured.
+ */
+function getCustomVoidTags(filePath) {
+  if (!filePath) {
+    return [];
+  }
+  const startDir = path.resolve(path.dirname(filePath));
+  const config = loadAvenxConfig(startDir);
+  if (!config || !Array.isArray(config.voidTags)) {
+    return [];
+  }
+  return config.voidTags
+    .filter((tag) => typeof tag === 'string' &amp;&amp; tag.trim() !== '')
+    .map((tag) => tag.trim().toLowerCase());
+}
+
+
 
 /**
  * ComponentParser handles the parsing of Avenx component files (.js and .css).
@@ -36,425 +148,1855 @@ const ExpressionParser = require('./expressionParser');
  * and coordinates with the StyleProcessor to handle styles.
  */
 class ComponentParser {
-    /**
-     * @param {StyleProcessor} styleProcessor - An instance of StyleProcessor to handle styles.
-     */
-    constructor(styleProcessor) {
-        /** @type {StyleProcessor} */
-        this.styleProcessor = styleProcessor;
-        /** @type {ExpressionParser} */
-        this.expressionParser = new ExpressionParser();
+  /**
+   * @param {StyleProcessor} styleProcessor - An instance of StyleProcessor to handle styles.
+   * @param {string[]} [customVoidTags] - Additional void tag names (lowercase).
+   * @param {object} [config] - Project configuration object.
+   */
+  constructor(styleProcessor, customVoidTags = [], config = null) {
+    /** @type {StyleProcessor} */
+    this.styleProcessor = styleProcessor;
+    /** @type {object|null} */
+    this.config = config;
+    /** @type {ExpressionParser} */
+    this.expressionParser = new ExpressionParser(config);
+    /** @type {string[]} */
+    this.customVoidTags = customVoidTags || [];
+  }
+
+  /**
+   * Parses a .component.js or .page.js file and its corresponding CSS file.
+   * @param {string} filePath - The absolute path to the file.
+   * @param {'component'|'page'} [type] - The type of file being parsed.
+   * @returns {string} The generated JavaScript class.
+   */
+  parse(filePath, type = 'component') {
+    const config = this.config || (filePath ? loadAvenxConfig(path.dirname(filePath)) : null);
+    const rootDir = filePath ? loadConfig.findProjectRoot(path.dirname(filePath)) : process.cwd();
+    filePath = resolvePathAlias(filePath, config, rootDir);
+
+    const isPage = type === 'page';
+    const content = replaceEnvVariables(fs.readFileSync(filePath, 'utf-8'));
+    const fileName = path.basename(filePath).replace(/\.(component|page)?\.(js|html|avx)$/i, '');
+
+    // Convert user-profile or user_profile to UserProfile
+    const name = fileName
+      .split(/[-_]/)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join('');
+
+    const desPath = filePath.replace(/\.(component|page)?\.(js|html|avx)$/i, isPage ? '.page.css' : '.component.css');
+    const desBlocks = {};
+    const styles = {};
+
+    if (fs.existsSync(desPath)) {
+      const desContent = fs.readFileSync(desPath, 'utf-8');
+      const globalMatch = desContent.match(/&lt;@global>([\s\S]*?)&lt;\/ ?@global>/i);
+      if (globalMatch) {
+        const inner = globalMatch[1];
+        const defRegex = /@def\s+([\w-]+)\s+([^;]+);/g;
+        let defMatch;
+        while ((defMatch = defRegex.exec(inner)) !== null) {
+          styles[defMatch[1]] = defMatch[2].trim();
+        }
+      }
+      this.styleProcessor.registerSourceFile(desPath, desContent);
+      this.extractStylesAndVars(desContent, desBlocks, desPath);
     }
 
-    /**
-     * Parses a .component.js or .page.js file and its corresponding CSS file.
-     * @param {string} filePath - The absolute path to the file.
-     * @param {'component'|'page'} [type='component'] - The type of file being parsed.
-     * @returns {string} The generated JavaScript class.
-     */
-    parse(filePath, type = 'component') {
-        const isPage = type === 'page';
-        const suffix = isPage ? '.page.js' : '.component.js';
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const fileName = path.basename(filePath, suffix);
-        
-        // Convert user-profile or user_profile to UserProfile
-        const name = fileName
-            .split(/[-_]/)
-            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-            .join('');
+    const state = this.extractState(content, filePath, config);
+    const computed = this.extractComputed(content);
+    const methods = this.extractMethods(content, name, filePath, config);
+    const resources = this.expressionParser.parseResources(content);
+    let template = this.extractTemplate(content, desBlocks, name, filePath, state, computed, methods, resources);
 
-        const desPath = filePath.replace(suffix, isPage ? '.page.css' : '.component.css');
-        let desBlocks = {};
+    // Handle declarative tags: &lt;MyComponent /> or &lt;MyComponent>...&lt;/MyComponent> -> &lt;div data-avenx-comp="MyComponent">...&lt;/div>
+    // Only if it looks like a component (starts with uppercase)
+    template = this.processComponentTags(template);
 
-        if (fs.existsSync(desPath)) {
-            this.extractStylesAndVars(fs.readFileSync(desPath, 'utf-8'), desBlocks);
-        }
+    // Identify and mark static subtrees for patcher performance optimization
+    template = this.optimizeStaticSubtrees(template, filePath);
 
-        const state = this.extractState(content);
-        const computed = this.extractComputed(content);
-        const methods = this.extractMethods(content);
-        let template = this.extractTemplate(content, desBlocks, name);
+    const methodStrings = Object.entries(methods)
+      .map(([k, v]) => `${k}: \`${v}\``)
+      .join(',\n        ');
 
-        // Handle declarative tags: &lt;MyComponent /> or &lt;MyComponent>...&lt;/MyComponent> -> &lt;div data-avenx-comp="MyComponent">...&lt;/div>
-        // Only if it looks like a component (starts with uppercase)
-        template = this.processComponentTags(template);
-
-        const methodStrings = Object.entries(methods)
-            .map(([k, v]) => `${k}: \`${v}\``).join(',\n        ');
-
-        if (isPage) {
-            return `
+    if (isPage) {
+      return `
+/**
+ * Page component representing ${name}.
+ */
 class ${name} extends AvenxPage {
+    /**
+     * @param {Object} bridges - Mapped bridges.
+     * @param {Object} componentRegistry - Registry of components.
+     * @param {Object} props - Page properties.
+     */
     constructor(bridges, componentRegistry, props) {
-        super(${JSON.stringify(state)}, ${JSON.stringify(computed)}, bridges, \`${template}\`, { ${methodStrings} }, componentRegistry, props);
+        super(${JSON.stringify(state)}, ${JSON.stringify(computed)}, bridges, \`${template}\`, { ${methodStrings} }, componentRegistry, props, ${JSON.stringify(styles)}, ${JSON.stringify(resources)});
     }
 }`;
-        }
+    }
 
-        return `
+    return `
+/**
+ * Component representing ${name}.
+ */
 class ${name} extends AvenxComponent {
+    /**
+     * @param {Object} bridges - Mapped bridges.
+     * @param {Object} props - Component properties.
+     */
     constructor(bridges, props) {
-        super(${JSON.stringify(state)}, ${JSON.stringify(computed)}, bridges, \`${template}\`, { ${methodStrings} }, props);
+        super(${JSON.stringify(state)}, ${JSON.stringify(computed)}, bridges, \`${template}\`, { ${methodStrings} }, props, ${JSON.stringify(styles)}, ${JSON.stringify(resources)});
     }
 }`;
+  }
+
+  /**
+   * Extracts global CSS variables and component-specific style blocks from CSS content.
+   * @param {string} desContent - The content of the .component.css file.
+   * @param {object} desBlocks - An object to store the extracted style blocks.
+   * @param {string} [desPath] - The original CSS file path.
+   * @private
+   */
+  extractStylesAndVars(desContent, desBlocks, desPath = '') {
+    const globalMatch = desContent.match(/&lt;@global>([\s\S]*?)&lt;\/ ?@global>/i);
+    let rawGlobalCss = '';
+    if (globalMatch) {
+      const idx = desContent.indexOf(globalMatch[0]);
+      const globalStartLine = desContent.substring(0, idx).split('\n').length;
+
+      const inner = globalMatch[1];
+      const defRegex = /@def\s+([\w-]+)\s+([^;]+);/g;
+      let defMatch;
+      while ((defMatch = defRegex.exec(inner)) !== null) {
+        this.styleProcessor.addVariable(defMatch[1], defMatch[2].trim());
+      }
+
+      // Remove @def lines and add the rest as global CSS
+      rawGlobalCss = inner.replace(/@def\s+[\w-]+\s+[^;]+;/g, '').trim();
+      let compiledGlobalCss = rawGlobalCss;
+      if (this.styleProcessor.options &amp;&amp; this.styleProcessor.options.preprocessor) {
+        compiledGlobalCss = this.styleProcessor.preprocessCss(rawGlobalCss, this.styleProcessor.options.preprocessor);
+      }
+      if (compiledGlobalCss) {
+        this.styleProcessor.addGlobalCSS(compiledGlobalCss, desPath, globalStartLine);
+      }
     }
 
-    /**
-     * Extracts global CSS variables and component-specific style blocks from CSS content.
-     * @param {string} desContent - The content of the .component.css file.
-     * @param {Object} desBlocks - An object to store the extracted style blocks.
-     * @private
-     */
-    extractStylesAndVars(desContent, desBlocks) {
-        const globalMatch = desContent.match(/&lt;@global>([\s\S]*?)&lt;\/ ?@global>/i);
-        if (globalMatch) {
-            let inner = globalMatch[1];
-            const defRegex = /@def\s+([\w-]+)\s+([^;]+);/g;
-            let defMatch;
-            while ((defMatch = defRegex.exec(inner)) !== null) {
-                this.styleProcessor.addVariable(defMatch[1], defMatch[2].trim());
-            }
-            
-            // Remove @def lines and add the rest as global CSS
-            const rawCss = inner.replace(/@def\s+[\w-]+\s+[^;]+;/g, '').trim();
-            if (rawCss) {
-                this.styleProcessor.addGlobalCSS(rawCss);
-            }
+    const cssBlockMatch = desContent.match(/&lt;@css>([\s\S]*?)&lt;\/ ?@css>/i);
+    if (cssBlockMatch) {
+      const cssContentOffset = desContent.indexOf(cssBlockMatch[0]);
+      const cssStartLine = desContent.substring(0, cssContentOffset).split('\n').length;
+
+      const inner = cssBlockMatch[1];
+      let depth = 0,
+        currentName = '',
+        currentBody = '',
+        inBlock = false;
+      let inString = null;
+      let inComment = false;
+
+      let blockStartLineOffset = 0;
+      let currentLineOffset = 0;
+
+      for (let i = 0; i &lt; inner.length; i++) {
+        const char = inner[i];
+        if (char === '\n') {
+          currentLineOffset++;
         }
 
-        const cssBlockMatch = desContent.match(/&lt;@css>([\s\S]*?)&lt;\/ ?@css>/i);
-        if (cssBlockMatch) {
-            const inner = cssBlockMatch[1];
-            let depth = 0, currentName = "", currentBody = "", inBlock = false;
-            for (let i = 0; i &lt; inner.length; i++) {
-                const char = inner[i];
-                if (char === '{' &amp;&amp; depth === 0) {
-                    currentName = inner.substring(0, i).trim().split('}').pop().trim();
-                    inBlock = true; depth++;
-                } else if (char === '{') {
-                    depth++; currentBody += char;
-                } else if (char === '}') {
-                    depth--;
-                    if (depth === 0) {
-                        if (currentName) desBlocks[currentName] = currentBody.trim();
-                        currentBody = ""; currentName = ""; inBlock = false;
-                    } else { currentBody += char; }
-                } else if (inBlock) { currentBody += char; }
-            }
-        }
-    }
-
-    /**
-     * Extracts the initial state from the component's &lt;state /> tags.
-     * @param {string} content - The content of the .component.js file.
-     * @returns {Object} The extracted state object.
-     * @private
-     */
-    extractState(content) {
-        return this.expressionParser.parseState(content);
-    }
-
-    /**
-     * Extracts computed properties from the component's &lt;computed /> tags.
-     * @param {string} content - The content of the .component.js file.
-     * @returns {Object} A map of property names to their expression strings.
-     * @private
-     */
-    extractComputed(content) {
-        return this.expressionParser.parseComputed(content);
-    }
-
-    /**
-     * Extracts actions (methods) from the component's &lt;action /> tags.
-     * @param {string} content - The content of the .component.js file.
-     * @returns {Object&lt;string, string>} A map of method names to their stringified bodies.
-     * @private
-     */
-    extractMethods(content) {
-        return this.expressionParser.parseMethods(content);
-    }
-
-    /**
-     * Extracts the HTML template and processes internal styles.
-     * @param {string} content - The content of the .component.js file.
-     * @param {Object} desBlocks - The previously extracted design blocks.
-     * @param {string} name - The name of the component for style hashing.
-     * @returns {string} The cleaned and processed HTML template.
-     * @private
-     */
-    extractTemplate(content, desBlocks, name) {
-        let template = content
-            .replace(/&lt;state.*? \/>/g, '')
-            .replace(/&lt;computed.*? \/>/g, '')
-            .replace(/&lt;action.*?>[\s\S]*?&lt;\/action>/g, '')
-            .trim();
-        template = this.styleProcessor.process(template, desBlocks, name);
-        template = this.processBindDirectives(template);
-        template = this.processForLoops(template);
-        return template.split('\n').filter(line => line.trim() !== '').join('\n');
-    }
-
-    /**
-     * Processes data-ax-bind attributes on input, textarea, and select elements.
-     * Converts data-ax-bind="expr" to value="{{ expr }}" and event listener.
-     * @param {string} template - The template string.
-     * @returns {string} The processed template.
-     */
-    processBindDirectives(template) {
-        const tagRegex = /&lt;(input|textarea|select)\b([^>]*?)>/gi;
-        return template.replace(tagRegex, (match, tagName, attrs) => {
-            const bindRegex = /\bdata-ax-bind\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
-            const bindMatch = attrs.match(bindRegex);
-            if (!bindMatch) {
-                return match;
-            }
-            
-            const bindExpr = (bindMatch[1] !== undefined ? bindMatch[1] : bindMatch[2]).trim();
-            let cleanAttrs = attrs.replace(bindRegex, '').trim();
-            
-            let isSelfClosing = false;
-            if (cleanAttrs.endsWith('/')) {
-                isSelfClosing = true;
-                cleanAttrs = cleanAttrs.slice(0, -1).trim();
-            }
-            
-            const eventName = tagName.toLowerCase() === 'select' ? 'change' : 'input';
-            const valueAttr = `value="{{ ${bindExpr} }}"`;
-            const eventAttr = `@${eventName}="${bindExpr} = event.target.value"`;
-            
-            const suffix = isSelfClosing ? ' />' : '>';
-            return `&lt;${tagName} ${cleanAttrs} ${valueAttr} ${eventAttr}`.trim().replace(/\s+/g, ' ') + suffix;
-        });
-    }
-
-    /**
-     * Processes &lt;@for> loops in the template, converting them to &lt;template> tags
-     * that can be handled by the runtime for efficient list rendering.
-     * @param {string} template - The HTML template string.
-     * @returns {string} The processed template.
-     * @private
-     */
-    processForLoops(template) {
-        let currentTemplate = template;
-
-        while (true) {
-            // Matches &lt;@for item in list> or &lt;@for item in list key="item.id">, or closing tag &lt;/@for> / &lt;/ @for>
-            const tagRegex = /(&lt;@for\s+(\w+)\s+in\s+([^>]+?)(?:\s+key="([^"]*)")?>)|(&lt;\/ ?@for>)/gi;
-            let match;
-            const tags = [];
-            while ((match = tagRegex.exec(currentTemplate)) !== null) {
-                if (match[1]) {
-                    tags.push({
-                        type: 'start',
-                        index: match.index,
-                        length: match[0].length,
-                        item: match[2],
-                        list: match[3],
-                        key: match[4]
-                    });
-                } else {
-                    tags.push({
-                        type: 'end',
-                        index: match.index,
-                        length: match[0].length
-                    });
-                }
-            }
-
-            if (tags.length === 0) {
-                break;
-            }
-
-            let innerPair = null;
-            const stack = [];
-            for (let i = 0; i &lt; tags.length; i++) {
-                const tag = tags[i];
-                if (tag.type === 'start') {
-                    stack.push(tag);
-                } else {
-                    const startTag = stack.pop();
-                    if (startTag) {
-                        innerPair = { start: startTag, end: tag };
-                        break; // Found innermost loop!
-                    }
-                }
-            }
-
-            if (!innerPair) {
-                console.warn("[ComponentParser] Unmatched &lt;@for> tags in template.");
-                break;
-            }
-
-            const startIdx = innerPair.start.index;
-            const endIdx = innerPair.end.index + innerPair.end.length;
-
-            const bodyStart = startIdx + innerPair.start.length;
-            const bodyEnd = innerPair.end.index;
-            const body = currentTemplate.substring(bodyStart, bodyEnd);
-
-            // Escape inner interpolation tags to prevent them from being processed
-            // by the initial template render. They will be processed per-item at runtime.
-            const escapedBody = body.replace(/\{\{/g, '{%').replace(/\}\}/g, '%}');
-            let attrs = `data-ax-for="${innerPair.start.list.trim()}" data-ax-as="${innerPair.start.item.trim()}"`;
-            if (innerPair.start.key) {
-                attrs += ` data-ax-key="${innerPair.start.key.trim()}"`;
-            }
-
-            const replacement = `&lt;template ${attrs}>${escapedBody}&lt;/template>`;
-            currentTemplate = currentTemplate.substring(0, startIdx) + replacement + currentTemplate.substring(endIdx);
+        if (inComment) {
+          if (char === '*' &amp;&amp; inner[i + 1] === '/') {
+            inComment = false;
+            i++; // skip '/'
+          }
+          continue;
         }
 
-        return currentTemplate;
-    }
+        if (char === '/' &amp;&amp; inner[i + 1] === '*') {
+          inComment = true;
+          i++; // skip '*'
+          continue;
+        }
 
-    /**
-     * Processes component tags recursively to handle transclusion slots.
-     * Maps `&lt;CompName ...>...&lt;/CompName>` to `&lt;div data-avenx-comp="CompName">...&lt;/div>`.
-     * @param {string} template - The template string.
-     * @returns {string} The processed template.
-     */
-    processComponentTags(template) {
-        let currentTemplate = template;
-        
-        while (true) {
-            // Find the first occurrence of &lt; followed by an uppercase letter
-            const match = currentTemplate.match(/&lt;([A-Z][a-zA-Z0-9]*)\b/);
-            if (!match) {
-                break;
+        if (inString) {
+          const toAppend = char;
+          let nextToAppend = '';
+          if (char === '\\') {
+            if (i + 1 &lt; inner.length) {
+              nextToAppend = inner[i + 1];
+              if (inner[i + 1] === '\n') currentLineOffset++;
+              i++;
             }
-            
-            const compName = match[1];
-            const startIndex = match.index;
-            
-            // Find the end of this opening/self-closing tag
-            let i = startIndex + 1 + compName.length;
-            let inQuote = null;
-            let isSelfClosing = false;
-            let tagEndIndex = -1;
-            
-            while (i &lt; currentTemplate.length) {
-                const char = currentTemplate[i];
-                if (inQuote) {
-                    if (char === inQuote) {
-                        inQuote = null;
-                    }
-                } else if (char === '"' || char === "'") {
-                    inQuote = char;
-                } else if (char === '>') {
-                    const trimmedBefore = currentTemplate.substring(startIndex + 1 + compName.length, i).trim();
-                    if (trimmedBefore.endsWith('/')) {
-                        isSelfClosing = true;
-                    }
-                    tagEndIndex = i + 1;
-                    break;
+          } else if (char === inString) {
+            inString = null;
+          }
+          if (inBlock) {
+            currentBody += toAppend + nextToAppend;
+          }
+        } else {
+          if (char === '"' || char === "'") {
+            inString = char;
+            if (inBlock) {
+              currentBody += char;
+            }
+          } else if (char === '{' &amp;&amp; depth === 0) {
+            const namePart = inner.substring(0, i).trim().split('}').pop().trim();
+            currentName = namePart.replace(/\/\*[\s\S]*?\*\//g, '').trim();
+
+            blockStartLineOffset = currentLineOffset;
+            inBlock = true;
+            depth++;
+          } else if (char === '{') {
+            depth++;
+            currentBody += char;
+          } else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+              if (currentName) {
+                let finalBody = currentBody.trim();
+                if (this.styleProcessor.options &amp;&amp; this.styleProcessor.options.preprocessor) {
+                  finalBody = this.styleProcessor.preprocessBlock(
+                    rawGlobalCss,
+                    finalBody,
+                    this.styleProcessor.options.preprocessor,
+                  );
                 }
-                i++;
-            }
-            
-            if (tagEndIndex === -1) {
-                break; // Malformed tag, stop parsing to prevent infinite loops
-            }
-            
-            // Extract the attributes string
-            let attrsStr = currentTemplate.substring(startIndex + 1 + compName.length, tagEndIndex - 1).trim();
-            if (isSelfClosing &amp;&amp; attrsStr.endsWith('/')) {
-                attrsStr = attrsStr.slice(0, -1).trim();
-            }
-            
-            // Parse attributes
-            const props = [];
-            const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-            let attrMatch;
-            while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
-                const attrName = attrMatch[1];
-                const attrVal = attrMatch[2] !== undefined ? attrMatch[2] : attrMatch[3];
-                
-                let propExpr;
-                if (attrVal.startsWith('{{') &amp;&amp; attrVal.endsWith('}}')) {
-                    propExpr = attrVal.slice(2, -2).trim();
-                } else {
-                    const trimmed = attrVal.trim();
-                    if (trimmed === 'true' || trimmed === 'false' || trimmed === 'null' || (trimmed !== '' &amp;&amp; !isNaN(trimmed))) {
-                        propExpr = trimmed;
-                    } else {
-                        propExpr = `'${trimmed.replace(/'/g, "\\'")}'`;
-                    }
+                desBlocks[currentName] = finalBody;
+                if (!desBlocks._sourceMapInfo) {
+                  Object.defineProperty(desBlocks, '_sourceMapInfo', {
+                    value: {},
+                    writable: true,
+                    enumerable: false,
+                    configurable: true,
+                  });
                 }
-                props.push(`data-props-${attrName}="${propExpr}"`);
-            }
-            const propsAttr = props.length > 0 ? ` ${props.join(' ')}` : '';
-            
-            if (isSelfClosing) {
-                const replacement = `&lt;div data-avenx-comp="${compName}"${propsAttr}>&lt;/div>`;
-                currentTemplate = currentTemplate.substring(0, startIndex) + replacement + currentTemplate.substring(tagEndIndex);
+                desBlocks._sourceMapInfo[currentName] = {
+                  startLine: cssStartLine + blockStartLineOffset,
+                  sourceFile: desPath,
+                };
+              }
+              currentBody = '';
+              currentName = '';
+              inBlock = false;
             } else {
-                // Find matching closing tag &lt;/CompName>
-                let searchIndex = tagEndIndex;
-                let depth = 1;
-                let closingTagIndex = -1;
-                let closingTagLength = 0;
-                
-                while (searchIndex &lt; currentTemplate.length) {
-                    const nextOpen = currentTemplate.substring(searchIndex).match(new RegExp(`^&lt;${compName}\\b`));
-                    const nextClose = currentTemplate.substring(searchIndex).match(new RegExp(`^&lt;/\\s*${compName}\\s*>`));
-                    
-                    if (nextClose) {
-                        depth--;
-                        if (depth === 0) {
-                            closingTagIndex = searchIndex;
-                            closingTagLength = nextClose[0].length;
-                            break;
-                        }
-                        searchIndex += nextClose[0].length;
-                    } else if (nextOpen) {
-                        // Scan to end of this open tag to see if it is self-closing
-                        let tempIdx = searchIndex + nextOpen[0].length;
-                        let tempInQuote = null;
-                        let tempIsSelfClosing = false;
-                        while (tempIdx &lt; currentTemplate.length) {
-                            const tc = currentTemplate[tempIdx];
-                            if (tempInQuote) {
-                                if (tc === tempInQuote) tempInQuote = null;
-                            } else if (tc === '"' || tc === "'") {
-                                tempInQuote = tc;
-                            } else if (tc === '>') {
-                                const trimmedBefore = currentTemplate.substring(searchIndex + nextOpen[0].length, tempIdx).trim();
-                                if (trimmedBefore.endsWith('/')) {
-                                    tempIsSelfClosing = true;
-                                }
-                                tempIdx++;
-                                break;
-                            }
-                            tempIdx++;
-                        }
-                        if (!tempIsSelfClosing) {
-                            depth++;
-                        }
-                        searchIndex = tempIdx;
-                    } else {
-                        searchIndex++;
-                    }
-                }
-                
-                if (closingTagIndex === -1) {
-                    // No matching closing tag, treat as self-closing
-                    const replacement = `&lt;div data-avenx-comp="${compName}"${propsAttr}>&lt;/div>`;
-                    currentTemplate = currentTemplate.substring(0, startIndex) + replacement + currentTemplate.substring(tagEndIndex);
-                } else {
-                    const innerContent = currentTemplate.substring(tagEndIndex, closingTagIndex);
-                    // Recursively process tags inside innerContent
-                    const processedInner = this.processComponentTags(innerContent);
-                    const replacement = `&lt;div data-avenx-comp="${compName}"${propsAttr}>${processedInner}&lt;/div>`;
-                    currentTemplate = currentTemplate.substring(0, startIndex) + replacement + currentTemplate.substring(closingTagIndex + closingTagLength);
-                }
+              currentBody += char;
             }
+          } else if (inBlock) {
+            currentBody += char;
+          }
         }
-        return currentTemplate;
+      }
     }
+  }
+
+  /**
+   * Extracts the initial state from the component's &lt;state /> tags.
+   * @param {string} content - The content of the .component.js file.
+   * @param {string} [filePath] - The component file path.
+   * @param {object} [config] - Project configuration object.
+   * @returns {object} The extracted state object.
+   * @private
+   */
+  extractState(content, filePath = '', config = null) {
+    const activeConfig = config || this.config || (filePath ? loadAvenxConfig(path.dirname(filePath)) : null);
+    return this.expressionParser.parseState(content, activeConfig);
+  }
+
+  /**
+   * Extracts computed properties from the component's &lt;computed /> tags.
+   * @param {string} content - The content of the .component.js file.
+   * @returns {object} A map of property names to their expression strings.
+   * @private
+   */
+  extractComputed(content) {
+    return this.expressionParser.parseComputed(content);
+  }
+
+  /**
+   * Extracts actions (methods) from the component's &lt;action /> tags and validates method names.
+   * @param {string} content - The content of the .component.js file.
+   * @param {string} [name] - Component name.
+   * @param {string} [filePath] - Component file path.
+   * @param {object} [config] - Project configuration object.
+   * @returns {Object&lt;string, string>} A map of method names to their stringified bodies.
+   * @private
+   */
+  extractMethods(content, name = '', filePath = '', config = null) {
+    const methods = this.expressionParser.parseMethods(content);
+    const activeConfig = config || this.config || (filePath ? loadAvenxConfig(path.dirname(filePath)) : null);
+    if (methods &amp;&amp; typeof methods === 'object') {
+      for (const methodName of Object.keys(methods)) {
+        if (RESERVED_INSTANCE_KEYS.includes(methodName)) {
+          reportWarning(
+            AvenxErrorCodes.COMPONENT_METHOD_RESERVED_KEY_COLLISION,
+            new TemplateValidationError(
+              AvenxErrorCodes.COMPONENT_METHOD_RESERVED_KEY_COLLISION,
+              methodName,
+              name || (filePath ? path.basename(filePath) : 'Component'),
+            ),
+            activeConfig,
+          );
+        }
+      }
+    }
+    return methods;
+  }
+
+  /**
+   * Preprocesses a raw template string using configured template preprocessor hooks.
+   * Supports custom filter functions (e.g. Pug -> HTML) before ComponentParser parses HTML.
+   * @param {string} rawTemplate - The raw template content.
+   * @param {string} [filePath] - Absolute path to component file.
+   * @returns {string} Preprocessed template string.
+   */
+  preprocessTemplate(rawTemplate, filePath = '') {
+    if (!rawTemplate || typeof rawTemplate !== 'string') return rawTemplate;
+
+    const config = this.config || (filePath ? loadAvenxConfig(path.dirname(filePath)) : null);
+    if (!config || !config.preprocessors) {
+      return rawTemplate;
+    }
+
+    const preprocessors = config.preprocessors;
+    let templateContent = rawTemplate;
+    let lang = null;
+
+    // Check if the template is wrapped in &lt;template lang="...">...&lt;/template> or &lt;template>...&lt;/template>
+    const templateTagMatch = rawTemplate.match(/^&lt;template(?:\s+lang=['"]?([\w-]+)['"]?)?\s*>([\s\S]*?)&lt;\/template>$/i);
+    if (templateTagMatch) {
+      lang = templateTagMatch[1] ? templateTagMatch[1].toLowerCase() : null;
+      templateContent = templateTagMatch[2];
+    }
+
+    let filterFn = null;
+
+    if (typeof preprocessors === 'function') {
+      filterFn = preprocessors;
+    } else if (typeof preprocessors === 'object' &amp;&amp; preprocessors !== null) {
+      if (lang) {
+        filterFn = preprocessors[lang] || preprocessors['.' + lang];
+      }
+      if (!filterFn) {
+        filterFn = preprocessors.template || preprocessors.html || preprocessors.default;
+      }
+      if (!filterFn &amp;&amp; Object.keys(preprocessors).length === 1) {
+        filterFn = Object.values(preprocessors)[0];
+      }
+    }
+
+    if (typeof filterFn === 'function') {
+      try {
+        const meta = { filePath, lang };
+        const result = filterFn(templateContent, meta);
+        if (typeof result === 'string') {
+          return result;
+        }
+      } catch (err) {
+        reportWarning(
+          AvenxErrorCodes.COMPILER_INVALID_CONFIG,
+          new BuildError(AvenxErrorCodes.COMPILER_INVALID_CONFIG, filePath || 'template', `Preprocessor execution error: ${err.message}`)
+        );
+      }
+    }
+
+    return templateContent;
+  }
+
+  /**
+   * Escapes backticks inside template interpolations.
+   * @param {string} template - The template string.
+   * @returns {string} The template string with escaped backticks.
+   * @private
+   */
+  escapeInterpolationBackticks(template) {
+    if (!template) return template;
+
+    return template.replace(/\{\{([\s\S]*?)\}\}/g, (match, expression) => {
+      const escapedExpression = expression.replace(/(?&lt;!\\)`/g, '\\`');
+
+      return `{{${escapedExpression}}}`;
+    });
+  }
+
+  /**
+   * Extracts the HTML template and processes internal styles.
+   * @param {string} content - The content of the .component.js file.
+   * @param {object} desBlocks - The previously extracted design blocks.
+   * @param {string} name - The name of the component for style hashing.
+   * @param {string} [filePath] - The component file path.
+   * @param {object} [state] - The extracted state keys.
+   * @param {object} [computed] - The extracted computed keys.
+   * @param {object} [methods] - The extracted method keys.
+   * @param {object} [resources] - The extracted resources.
+   * @returns {string} The cleaned and processed HTML template.
+   * @private
+   */
+  extractTemplate(content, desBlocks, name, filePath, state, computed, methods, resources = {}) {
+    let template = content
+      .replace(/&lt;!--[\s\S]*?-->/g, '')
+      .replace(/&lt;state.*? \/>/g, '')
+      .replace(/&lt;computed.*? \/>/g, '')
+      .replace(/&lt;action.*?>[\s\S]*?&lt;\/action>/g, '')
+      .replace(/&lt;resource.*?>[\s\S]*?&lt;\/resource>/g, '')
+      .replace(/&lt;resource\s+[\s\S]*?\/>/gi, '')
+      .trim();
+
+    template = this.preprocessTemplate(template, filePath);
+
+    const isPage = filePath &amp;&amp; filePath.endsWith('.page.js');
+
+    const desPath = filePath
+      ? filePath.replace(
+        isPage ? '.page.js' : '.component.js',
+        isPage ? '.page.css' : '.component.css'
+      )
+      : '';
+
+    template = this.styleProcessor.process(
+      template,
+      desBlocks,
+      name,
+      desPath
+    );
+
+    template = this.processBindDirectives(template);
+
+    if (filePath &amp;&amp; state &amp;&amp; computed &amp;&amp; methods) {
+      this.validateTemplate(
+        template,
+        state,
+        computed,
+        methods,
+        resources,
+        filePath,
+        name
+      );
+    }
+
+    template = this.processForLoops(template);
+    template = this.processSuspense(template);
+    template = this.processErrorBoundary(template);
+    template = this.processDefer(template);
+    template = this.processTransitionTags(template, filePath);
+    template = this.processEventDelegation(template, filePath);
+
+    // Escape backticks inside template interpolations.
+    template = this.escapeInterpolationBackticks(template);
+
+    return template
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .join('\n');
+  }
+
+
+  /**
+   * Translates common event handler attributes (@click, @input, etc.)
+   * to a single data-ax-event JSON-encoded attribute for centralized delegation.
+   * @param {string} template - The HTML template string.
+   * @param {string} filePath - The component file path.
+   * @returns {string} The transformed template string.
+   */
+  processEventDelegation(template, filePath) {
+    if (!template) return template;
+    const customVoidTags = [...(this.customVoidTags || []), ...getCustomVoidTags(filePath)];
+    const nodes = parseHTML(template, customVoidTags);
+    const COMMON_EVENTS = ['click', 'input', 'change', 'keydown'];
+
+    const transformNode = (node) => {
+      if (node.type === 'element') {
+        const eventMap = {};
+        for (const [name, val] of Object.entries(node.attrs)) {
+          if (name.startsWith('@')) {
+            const fullEventName = name.substring(1);
+            const baseEventName = fullEventName.split('.')[0];
+            if (COMMON_EVENTS.includes(baseEventName)) {
+              delete node.attrs[name];
+              eventMap[fullEventName] = val;
+            }
+          }
+        }
+        if (Object.keys(eventMap).length > 0) {
+          node.attrs['data-ax-event'] = JSON.stringify(eventMap);
+        }
+        if (node.children) {
+          node.children.forEach(transformNode);
+        }
+      }
+    };
+
+    nodes.forEach(transformNode);
+    return serializeHTML(nodes, customVoidTags);
+  }
+
+  /**
+   * Processes slot elements in the template, converting dynamic props starting
+   * with `:` to `data-props-` attributes.
+   * @param {string} template - The template string.
+   * @returns {string} The processed template.
+   */
+  processSlotProps(template) {
+    if (!template) return template;
+    const slotRegex = /&lt;slot\b([^>]*?)>/gi;
+    return template.replace(slotRegex, (match, attrsStr) => {
+      const replacedAttrs = attrsStr.replace(/\s+:([\w\d.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g, (m, name, dquote, squote) => {
+        const val = dquote !== undefined ? dquote : squote;
+        return ` data-props-${name}="${val}"`;
+      });
+      return `&lt;slot${replacedAttrs}>`;
+    });
+  }
+
+  /**
+   * Encodes interpolations inside `&lt;template data-slot-props="...">` tags
+   * to avoid premature evaluation by the parent component.
+   * @param {string} template - The template string.
+   * @returns {string} The processed template.
+   */
+  escapeScopedSlots(template) {
+    if (!template) return template;
+    let currentTemplate = template;
+    const startRegex = /&lt;template\s+[^>]*\bdata-slot-props="([^"]*)"[^>]*>/gi;
+    let match;
+
+    while ((match = startRegex.exec(currentTemplate)) !== null) {
+      const startIndex = match.index;
+      const tagOpenLength = match[0].length;
+
+      // Find the matching &lt;/template> tag by tracking depth
+      let searchIndex = startIndex + tagOpenLength;
+      let depth = 1;
+      let closingIndex = -1;
+
+      while (searchIndex &lt; currentTemplate.length) {
+        const nextOpen = currentTemplate.substring(searchIndex).match(/^&lt;template\b/i);
+        const nextClose = currentTemplate.substring(searchIndex).match(/^&lt;\/template>/i);
+
+        if (nextClose) {
+          depth--;
+          if (depth === 0) {
+            closingIndex = searchIndex;
+            break;
+          }
+          searchIndex += nextClose[0].length;
+        } else if (nextOpen) {
+          depth++;
+          searchIndex += nextOpen[0].length;
+        } else {
+          searchIndex++;
+        }
+      }
+
+      if (closingIndex !== -1) {
+        const contentStart = startIndex + tagOpenLength;
+        const content = currentTemplate.substring(contentStart, closingIndex);
+
+        // Escape interpolations in the content
+        const escapedContent = content
+          .replace(/\{\{\{\s*(.*?)\s*\}\}\}/g, (m, g) => `_AX_LBRACE3_${g}_AX_RBRACE3_`)
+          .replace(/\{\{\s*(.*?)\s*\}\}/g, (m, g) => `_AX_LBRACE_${g}_AX_RBRACE_`);
+
+        currentTemplate = currentTemplate.substring(0, contentStart) + escapedContent + currentTemplate.substring(closingIndex);
+
+        // Advance regex lastIndex past the modified template block
+        startRegex.lastIndex = contentStart + escapedContent.length + 11; // 11 is length of &lt;/template>
+      }
+    }
+    return currentTemplate;
+  }
+
+
+  /**
+   * Performs compile-time validation on template expressions to ensure
+   * all referenced variables and methods are declared.
+   * @param {string} template - The template string (after data-ax-bind translation).
+   * @param {object} state - The extracted state keys.
+   * @param {object} computed - The extracted computed keys.
+   * @param {object} methods - The extracted method keys.
+   * @param {object} [resources] - The extracted resources.
+   * @param {string} filePath - The component file path.
+   * @param {string} [name] - The component name, used for warning messages.
+   * @private
+   */
+  validateTemplate(template, state, computed, methods, resources, filePath, name) {
+    const config = this.config || (filePath ? loadAvenxConfig(path.dirname(filePath)) : null);
+    if (!template || template.trim() === '') {
+      reportWarning(
+        AvenxErrorCodes.COMPILER_EMPTY_TEMPLATE,
+        new TemplateValidationError(AvenxErrorCodes.COMPILER_EMPTY_TEMPLATE, name),
+        config,
+      );
+    }
+
+    const declared = new Set([...Object.keys(state), ...Object.keys(computed), ...Object.keys(methods), ...Object.keys(resources || {})]);
+
+    // Extract loop item variables from &lt;@for item in list>
+    const forLoopRegex = /&lt;@for\s+(\w+)\s+in\s+([^>]+?)>/gi;
+    let forMatch;
+    while ((forMatch = forLoopRegex.exec(template)) !== null) {
+      declared.add(forMatch[1].trim());
+    }
+
+    const slotPropsRegex = /data-slot-props="([^"]*)"/gi;
+    let slotPropsMatch;
+    while ((slotPropsMatch = slotPropsRegex.exec(template)) !== null) {
+      declared.add(slotPropsMatch[1].trim());
+    }
+
+    const bridges = this.findBridgeNames(filePath);
+    bridges.forEach((b) => declared.add(b));
+
+    const EXCLUDED_IDENTIFIERS = new Set([
+      'true',
+      'false',
+      'null',
+      'undefined',
+      'NaN',
+      'Infinity',
+      'this',
+      'let',
+      'const',
+      'var',
+      'function',
+      'return',
+      'if',
+      'else',
+      'for',
+      'in',
+      'of',
+      'new',
+      'typeof',
+      'instanceof',
+      'class',
+      'extends',
+      'try',
+      'catch',
+      'finally',
+      'throw',
+      'await',
+      'async',
+      'import',
+      'export',
+      'default',
+      'delete',
+      'void',
+      'do',
+      'while',
+      'switch',
+      'case',
+      'break',
+      'continue',
+      'debugger',
+      'yield',
+      'with',
+      'arguments',
+      'console',
+      'Math',
+      'JSON',
+      'window',
+      'document',
+      'Array',
+      'Object',
+      'String',
+      'Number',
+      'Boolean',
+      'Date',
+      'Error',
+      'Map',
+      'Set',
+      'Promise',
+      'props',
+      'styles',
+      'event',
+      'args',
+    ]);
+
+    const events = [];
+
+    // 1. Find loop starts and ends
+    const forStartRegex = /&lt;@for\s+(\w+)\s+in\s+([^>]+?)(?:\s+key="([^"]*)")?>/gi;
+    let match;
+    while ((match = forStartRegex.exec(template)) !== null) {
+      events.push({
+        type: 'loop_start',
+        index: match.index,
+        length: match[0].length,
+        item: match[1],
+        list: match[2],
+      });
+    }
+
+    const forEndRegex = /&lt;\/ ?@for>/gi;
+    while ((match = forEndRegex.exec(template)) !== null) {
+      events.push({
+        type: 'loop_end',
+        index: match.index,
+        length: match[0].length,
+      });
+    }
+
+    // 2. Find interpolations
+    const interpRegex = /\{\{([\s\S]*?)\}\}/g;
+    while ((match = interpRegex.exec(template)) !== null) {
+      events.push({
+        type: 'interpolation',
+        index: match.index,
+        length: match[0].length,
+        expr: match[1],
+      });
+    }
+
+    // 3. Find event attributes in any tag
+    const tagRegex = /&lt;([a-zA-Z0-9@/!-][^>]*?)>/g;
+    while ((match = tagRegex.exec(template)) !== null) {
+      const tagIndex = match.index;
+      const attrRegex = /@([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let attrMatch;
+      while ((attrMatch = attrRegex.exec(match[0])) !== null) {
+        events.push({
+          type: 'event',
+          index: tagIndex + attrMatch.index,
+          length: attrMatch[0].length,
+          expr: attrMatch[2] !== undefined ? attrMatch[2] : attrMatch[3],
+        });
+      }
+
+      const dirRegex = /\b(data-ax-[a-zA-Z0-9_.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let dirMatch;
+      while ((dirMatch = dirRegex.exec(match[0])) !== null) {
+        events.push({
+          type: 'directive',
+          index: tagIndex + dirMatch.index,
+          length: dirMatch[0].length,
+          expr: dirMatch[2] !== undefined ? dirMatch[2] : dirMatch[3],
+        });
+      }
+
+      const idAttrRegex = /(?:^|\s)id\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let idMatch;
+      while ((idMatch = idAttrRegex.exec(match[0])) !== null) {
+        const idVal = idMatch[1] !== undefined ? idMatch[1] : idMatch[2];
+        if (idVal &amp;&amp; !idVal.includes('{{')) {
+          events.push({
+            type: 'id_attribute',
+            index: tagIndex + idMatch.index,
+            length: idMatch[0].length,
+            idValue: idVal,
+          });
+        }
+      }
+    }
+
+    events.sort((a, b) => a.index - b.index);
+
+    const currentLoopVars = [];
+    const seenIds = new Set();
+    let loopDepth = 0;
+    const filename = path.basename(filePath);
+
+    const checkIdentifiers = (expr) => {
+      const ids = this.extractRootIdentifiers(expr);
+      for (const id of ids) {
+        if (EXCLUDED_IDENTIFIERS.has(id)) {
+          continue;
+        }
+        if (currentLoopVars.includes(id)) {
+          continue;
+        }
+        if (!declared.has(id)) {
+          reportWarning(
+            AvenxErrorCodes.COMPILER_UNDECLARED_REFERENCE,
+            new TemplateValidationError(AvenxErrorCodes.COMPILER_UNDECLARED_REFERENCE, id, filename),
+            config,
+          );
+        }
+      }
+    };
+
+    for (const ev of events) {
+      if (ev.type === 'loop_start') {
+        checkIdentifiers(ev.list);
+        currentLoopVars.push(ev.item);
+        loopDepth++;
+      } else if (ev.type === 'loop_end') {
+        currentLoopVars.pop();
+        loopDepth = Math.max(0, loopDepth - 1);
+      } else if (ev.type === 'id_attribute') {
+        if (seenIds.has(ev.idValue) || loopDepth > 0) {
+          reportWarning(
+            AvenxErrorCodes.COMPILER_DUPLICATE_ID_ATTRIBUTE,
+            new TemplateValidationError(
+              AvenxErrorCodes.COMPILER_DUPLICATE_ID_ATTRIBUTE,
+              ev.idValue,
+              name || filename,
+            ),
+            config,
+          );
+        }
+        seenIds.add(ev.idValue);
+      } else if (ev.type === 'interpolation' || ev.type === 'event' || ev.type === 'directive') {
+        checkIdentifiers(ev.expr);
+      }
+    }
+  }
+
+  /**
+   * Extracts root variable and method identifiers from a JS expression string.
+   * @param {string} code - The Javascript expression/statement.
+   * @returns {string[]} The list of root identifiers.
+   * @private
+   */
+  extractRootIdentifiers(code) {
+    const identifiers = new Set();
+    let i = 0;
+    let hasQuestionMark = false;
+
+    while (i &lt; code.length) {
+      const char = code[i];
+
+      if (char === '/' &amp;&amp; code[i + 1] === '/') {
+        i += 2;
+        while (i &lt; code.length &amp;&amp; code[i] !== '\n') i++;
+        continue;
+      }
+
+      if (char === '/' &amp;&amp; code[i + 1] === '*') {
+        i += 2;
+        while (i &lt; code.length &amp;&amp; !(code[i] === '*' &amp;&amp; code[i + 1] === '/')) i++;
+        i += 2;
+        continue;
+      }
+
+      if (char === "'") {
+        i++;
+        while (i &lt; code.length &amp;&amp; code[i] !== "'") {
+          if (code[i] === '\\') i++;
+          i++;
+        }
+        i++;
+        continue;
+      }
+
+      if (char === '"') {
+        i++;
+        while (i &lt; code.length &amp;&amp; code[i] !== '"') {
+          if (code[i] === '\\') i++;
+          i++;
+        }
+        i++;
+        continue;
+      }
+
+      if (char === '`') {
+        i++;
+        while (i &lt; code.length &amp;&amp; code[i] !== '`') {
+          if (code[i] === '\\') i++;
+          if (code[i] === '$' &amp;&amp; code[i + 1] === '{') {
+            let depth = 1;
+            let j = i + 2;
+            while (j &lt; code.length &amp;&amp; depth > 0) {
+              if (code[j] === '{') depth++;
+              else if (code[j] === '}') depth--;
+              j++;
+            }
+            const subExpr = code.substring(i + 2, j - 1);
+            this.extractRootIdentifiers(subExpr).forEach((id) => identifiers.add(id));
+            i = j - 1;
+          }
+          i++;
+        }
+        i++;
+        continue;
+      }
+
+      const idRegex = /^[A-Za-z_$][\w$]*/;
+      const sub = code.substring(i);
+      const match = sub.match(idRegex);
+      if (match) {
+        const name = match[0];
+
+        let isProperty = false;
+        let checkIdx = i - 1;
+        while (checkIdx >= 0 &amp;&amp; /\s/.test(code[checkIdx])) {
+          checkIdx--;
+        }
+        if (checkIdx >= 0 &amp;&amp; code[checkIdx] === '.') {
+          isProperty = true;
+        } else if (checkIdx >= 1 &amp;&amp; code[checkIdx] === '.' &amp;&amp; code[checkIdx - 1] === '?') {
+          isProperty = true;
+        }
+
+        let nextIdx = i + name.length;
+        while (nextIdx &lt; code.length &amp;&amp; /\s/.test(code[nextIdx])) {
+          nextIdx++;
+        }
+        let isObjectKey = false;
+        if (nextIdx &lt; code.length &amp;&amp; code[nextIdx] === ':') {
+          if (!hasQuestionMark) {
+            isObjectKey = true;
+          } else {
+            hasQuestionMark = false;
+          }
+        }
+
+        if (!isProperty &amp;&amp; !isObjectKey) {
+          identifiers.add(name);
+        }
+
+        i += name.length;
+        continue;
+      }
+
+      if (char === '?') {
+        if (code[i + 1] === '.') {
+          i += 2;
+          continue;
+        }
+        hasQuestionMark = true;
+      }
+
+      if (char === ';' || char === ',' || char === '{' || char === '(' || char === '[') {
+        hasQuestionMark = false;
+      }
+
+      i++;
+    }
+
+    return Array.from(identifiers);
+  }
+
+  /**
+   * Resolves all bridge names in the src/global folder relative to a file.
+   * @param {string} filePath - The absolute file path of the component.
+   * @returns {Set&lt;string>} The set of bridge names.
+   * @private
+   */
+  findBridgeNames(filePath) {
+    const bridgeNames = new Set();
+    if (!filePath) return bridgeNames;
+    try {
+      let currentDir = path.resolve(path.dirname(filePath));
+      while (currentDir) {
+        const globalDir = path.join(currentDir, 'global');
+        if (fs.existsSync(globalDir) &amp;&amp; fs.statSync(globalDir).isDirectory()) {
+          fs.readdirSync(globalDir).forEach((file) => {
+            if (file.endsWith('.bridge.js')) {
+              const name = path.basename(file, '.bridge.js');
+              const capitalizedName =
+                name
+                  .split(/[-_]/)
+                  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                  .join('') + 'Bridge';
+              bridgeNames.add(capitalizedName);
+            }
+          });
+          break;
+        }
+        const srcGlobalDir = path.join(currentDir, 'src', 'global');
+        if (fs.existsSync(srcGlobalDir) &amp;&amp; fs.statSync(srcGlobalDir).isDirectory()) {
+          fs.readdirSync(srcGlobalDir).forEach((file) => {
+            if (file.endsWith('.bridge.js')) {
+              const name = path.basename(file, '.bridge.js');
+              const capitalizedName =
+                name
+                  .split(/[-_]/)
+                  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                  .join('') + 'Bridge';
+              bridgeNames.add(capitalizedName);
+            }
+          });
+          break;
+        }
+        const parent = path.dirname(currentDir);
+        if (parent === currentDir) {
+          break;
+        }
+        currentDir = parent;
+      }
+    } catch {
+      // Ignore directory scanning errors
+    }
+    return bridgeNames;
+  }
+
+  /**
+   * Processes data-ax-bind attributes on input, textarea, and select elements.
+   * Converts data-ax-bind="expr" to value="{{ expr }}" and event listener.
+   * @param {string} template - The template string.
+   * @returns {string} The processed template.
+   */
+  processBindDirectives(template) {
+    return processBindDirectives(template);
+  }
+
+  /**
+   * Processes &lt;@for> loops in the template, converting them to &lt;template> tags
+   * that can be handled by the runtime for efficient list rendering.
+   * @param {string} template - The HTML template string.
+   * @returns {string} The processed template.
+   * @private
+   */
+  processForLoops(template) {
+    let currentTemplate = template;
+
+    while (true) {
+      // Matches &lt;@for item in list> or &lt;@for item in list key="item.id">, or closing tag &lt;/@for> / &lt;/ @for>
+      const tagRegex = /(&lt;@for\s+(\w+)\s+in\s+([^>]+?)(?:\s+key="([^"]*)")?>)|(&lt;\/ ?@for>)/gi;
+      let match;
+      const tags = [];
+      while ((match = tagRegex.exec(currentTemplate)) !== null) {
+        if (match[1]) {
+          tags.push({
+            type: 'start',
+            index: match.index,
+            length: match[0].length,
+            item: match[2],
+            list: match[3],
+            key: match[4],
+          });
+        } else {
+          tags.push({
+            type: 'end',
+            index: match.index,
+            length: match[0].length,
+          });
+        }
+      }
+
+      if (tags.length === 0) {
+        break;
+      }
+
+      let innerPair = null;
+      const stack = [];
+      for (let i = 0; i &lt; tags.length; i++) {
+        const tag = tags[i];
+        if (tag.type === 'start') {
+          stack.push(tag);
+        } else {
+          const startTag = stack.pop();
+          if (startTag) {
+            innerPair = { start: startTag, end: tag };
+            break; // Found innermost loop!
+          }
+        }
+      }
+
+      if (!innerPair) {
+        logger.warn(new TemplateValidationError(AvenxErrorCodes.COMPILER_UNMATCHED_FOR_TAG).message);
+        break;
+      }
+
+      const startIdx = innerPair.start.index;
+      const endIdx = innerPair.end.index + innerPair.end.length;
+
+      const bodyStart = startIdx + innerPair.start.length;
+      const bodyEnd = innerPair.end.index;
+      const body = currentTemplate.substring(bodyStart, bodyEnd);
+
+      // Escape inner interpolation tags to prevent them from being processed
+      // by the initial template render. They will be processed per-item at runtime.
+      const escapedBody = body.replace(/\{\{/g, '{%').replace(/\}\}/g, '%}');
+      let attrs = `data-ax-for="${innerPair.start.list.trim()}" data-ax-as="${innerPair.start.item.trim()}"`;
+      if (innerPair.start.key) {
+        attrs += ` data-ax-key="${innerPair.start.key.trim()}"`;
+      }
+
+      const replacement = `&lt;template ${attrs}>${escapedBody}&lt;/template>`;
+      currentTemplate = currentTemplate.substring(0, startIdx) + replacement + currentTemplate.substring(endIdx);
+    }
+
+    return currentTemplate;
+  }
+
+  /**
+   * Processes &lt;@suspense> tags, converting them to DOM markers.
+   * @param {string} template - The template string.
+   * @returns {string} The processed template.
+   * @private
+   */
+  processSuspense(template) {
+    let currentTemplate = template;
+    while (true) {
+      const match = currentTemplate.match(/&lt;@suspense>([\s\S]*?)&lt;\/ ?@suspense>/i);
+      if (!match) break;
+
+      const fullMatch = match[0];
+      const inner = match[1];
+
+      // Extract &lt;@fallback>
+      let fallbackContent = '';
+      let suspenseContent = inner;
+      const fallbackMatch = inner.match(/&lt;@fallback>([\s\S]*?)&lt;\/ ?@fallback>/i);
+      if (fallbackMatch) {
+        fallbackContent = fallbackMatch[1].replace(/\{\{/g, '{%').replace(/\}\}/g, '%}'); // Escape fallback template logic
+        suspenseContent = inner.replace(fallbackMatch[0], '');
+      }
+
+      const replacement = `&lt;div data-ax-suspense="true">&lt;template data-ax-fallback>${fallbackContent}&lt;/template>${suspenseContent}&lt;/div>`;
+      currentTemplate = currentTemplate.replace(fullMatch, replacement);
+    }
+    return currentTemplate;
+  }
+
+  /**
+   * Processes &lt;@errorBoundary> tags, converting them to DOM markers.
+   * @param {string} template - The template string.
+   * @returns {string} The processed template.
+   * @private
+   */
+  processErrorBoundary(template) {
+    let currentTemplate = template;
+    while (true) {
+      const match = currentTemplate.match(/&lt;@errorBoundary>([\s\S]*?)&lt;\/ ?@errorBoundary>/i);
+      if (!match) break;
+
+      const fullMatch = match[0];
+      const inner = match[1];
+
+      // Extract &lt;@fallback as="...">
+      let fallbackContent = '';
+      let errorAs = 'error';
+      let boundaryContent = inner;
+      const fallbackMatch = inner.match(/&lt;@fallback(?:\s+as="([^"]*)")?>([\s\S]*?)&lt;\/ ?@fallback>/i);
+      if (fallbackMatch) {
+        errorAs = fallbackMatch[1] || 'error';
+        fallbackContent = fallbackMatch[2].replace(/\{\{/g, '{%').replace(/\}\}/g, '%}'); // Escape fallback logic
+        boundaryContent = inner.replace(fallbackMatch[0], '');
+      }
+
+      const replacement = `&lt;div data-ax-error-boundary="true" data-ax-error-as="${errorAs}">&lt;template data-ax-error-fallback>&lt;div class="ax-error-boundary">${fallbackContent}&lt;/div>&lt;/template>${boundaryContent}&lt;/div>`;
+      currentTemplate = currentTemplate.replace(fullMatch, replacement);
+    }
+    return currentTemplate;
+  }
+
+  /**
+   * Processes &lt;@defer> tags, converting them to DOM markers with templates for deferred loading.
+   * Supports triggers via when="&lt;trigger>" (idle, visible, interaction, timer, expression)
+   * and optional &lt;@placeholder> and &lt;@loading> sub-tags.
+   * @param {string} template - The template string.
+   * @returns {string} The processed template.
+   * @private
+   */
+  processDefer(template) {
+    let currentTemplate = template;
+    while (true) {
+      const match = currentTemplate.match(/&lt;@defer(?:\s+when=["']([^"']*)["'])?\s*>([\s\S]*?)&lt;\/ ?@defer>/i);
+      if (!match) break;
+
+      const fullMatch = match[0];
+      const whenCondition = (match[1] || 'idle').trim();
+      const inner = match[2];
+
+      let placeholderContent = '';
+      let loadingContent = '';
+      let deferredContent = inner;
+
+      const placeholderMatch = inner.match(/&lt;@placeholder>([\s\S]*?)&lt;\/ ?@placeholder>/i);
+      if (placeholderMatch) {
+        placeholderContent = placeholderMatch[1].replace(/\{\{/g, '{%').replace(/\}\}/g, '%}').trim();
+        deferredContent = deferredContent.replace(placeholderMatch[0], '');
+      }
+
+      const loadingMatch = inner.match(/&lt;@loading>([\s\S]*?)&lt;\/ ?@loading>/i);
+      if (loadingMatch) {
+        loadingContent = loadingMatch[1].replace(/\{\{/g, '{%').replace(/\}\}/g, '%}').trim();
+        deferredContent = deferredContent.replace(loadingMatch[0], '');
+      }
+
+      deferredContent = deferredContent.replace(/\{\{/g, '{%').replace(/\}\}/g, '%}').trim();
+
+      const placeholderTpl = placeholderContent ? `&lt;template data-ax-defer-placeholder>${placeholderContent}&lt;/template>` : '';
+      const loadingTpl = loadingContent ? `&lt;template data-ax-defer-loading>${loadingContent}&lt;/template>` : '';
+      const contentTpl = `&lt;template data-ax-defer-content>${deferredContent}&lt;/template>`;
+
+      const replacement = `&lt;div data-ax-defer="true" data-ax-defer-when="${whenCondition}">${placeholderTpl}${loadingTpl}${contentTpl}&lt;/div>`;
+      currentTemplate = currentTemplate.replace(fullMatch, replacement);
+    }
+    return currentTemplate;
+  }
+
+  /**
+   * Processes component tags recursively to handle transclusion slots.
+   * Maps `&lt;CompName ...>...&lt;/CompName>` to `&lt;div data-avenx-comp="CompName">...&lt;/div>`.
+   * @param {string} template - The template string.
+   * @returns {string} The processed template.
+   */
+  processComponentTags(template) {
+    let currentTemplate = template;
+    currentTemplate = this.processSlotProps(currentTemplate);
+    currentTemplate = this.escapeScopedSlots(currentTemplate);
+
+    while (true) {
+      // Find the first occurrence of &lt; followed by an uppercase letter
+      const match = currentTemplate.match(/&lt;([A-Z][a-zA-Z0-9]*)\b/);
+      if (!match) {
+        break;
+      }
+
+      const compName = match[1];
+      const startIndex = match.index;
+
+      // Find the end of this opening/self-closing tag
+      let i = startIndex + 1 + compName.length;
+      let inQuote = null;
+      let isSelfClosing = false;
+      let tagEndIndex = -1;
+
+      while (i &lt; currentTemplate.length) {
+        const char = currentTemplate[i];
+        if (inQuote) {
+          if (char === inQuote) {
+            inQuote = null;
+          }
+        } else if (char === '"' || char === "'") {
+          inQuote = char;
+        } else if (char === '>') {
+          const trimmedBefore = currentTemplate.substring(startIndex + 1 + compName.length, i).trim();
+          if (trimmedBefore.endsWith('/')) {
+            isSelfClosing = true;
+          }
+          tagEndIndex = i + 1;
+          break;
+        }
+        i++;
+      }
+
+      if (tagEndIndex === -1) {
+        break; // Malformed tag, stop parsing to prevent infinite loops
+      }
+
+      // Extract the attributes string
+      let attrsStr = currentTemplate.substring(startIndex + 1 + compName.length, tagEndIndex - 1).trim();
+      if (isSelfClosing &amp;&amp; attrsStr.endsWith('/')) {
+        attrsStr = attrsStr.slice(0, -1).trim();
+      }
+
+      let isExpr = '';
+      const isDynamic = compName === 'Component';
+
+      // Parse attributes
+      const props = [];
+      const others = [];
+      const attrs = parseAttributes(attrsStr);
+      for (const [attrName, attrVal] of Object.entries(attrs)) {
+        if (isDynamic &amp;&amp; (attrName === 'is' || attrName === ':is')) {
+          if (attrVal.startsWith('{{') &amp;&amp; attrVal.endsWith('}}')) {
+            isExpr = attrVal.slice(2, -2).trim();
+          } else {
+            isExpr = attrVal.trim();
+          }
+        } else if (attrName.startsWith('@')) {
+          others.push(`${attrName}="${attrVal.replace(/"/g, '&amp;quot;')}"`);
+        } else {
+          let propExpr;
+          if (attrVal.startsWith('{{') &amp;&amp; attrVal.endsWith('}}')) {
+            propExpr = attrVal.slice(2, -2).trim();
+          } else {
+            const trimmed = attrVal.trim();
+            if (
+              trimmed === 'true' ||
+              trimmed === 'false' ||
+              trimmed === 'null' ||
+              (trimmed !== '' &amp;&amp; !isNaN(trimmed))
+            ) {
+              propExpr = trimmed;
+            } else {
+              propExpr = `'${trimmed.replace(/'/g, "\\'")}'`;
+            }
+          }
+          props.push(`data-props-${attrName}="${propExpr}"`);
+        }
+      }
+      const propsAttr = props.length > 0 ? ` ${props.join(' ')}` : '';
+      const othersAttr = others.length > 0 ? ` ${others.join(' ')}` : '';
+
+      const replacementTag = isDynamic ? `data-avenx-comp-dynamic="${isExpr}"` : `data-avenx-comp="${compName}"`;
+
+      if (isSelfClosing) {
+        const replacement = `&lt;div ${replacementTag}${propsAttr}${othersAttr}>&lt;/div>`;
+        currentTemplate =
+          currentTemplate.substring(0, startIndex) + replacement + currentTemplate.substring(tagEndIndex);
+      } else {
+        // Find matching closing tag &lt;/CompName>
+        let searchIndex = tagEndIndex;
+        let depth = 1;
+        let closingTagIndex = -1;
+        let closingTagLength = 0;
+
+        while (searchIndex &lt; currentTemplate.length) {
+          const nextOpen = currentTemplate.substring(searchIndex).match(new RegExp(`^&lt;${compName}\\b`));
+          const nextClose = currentTemplate.substring(searchIndex).match(new RegExp(`^&lt;/\\s*${compName}\\s*>`));
+
+          if (nextClose) {
+            depth--;
+            if (depth === 0) {
+              closingTagIndex = searchIndex;
+              closingTagLength = nextClose[0].length;
+              break;
+            }
+            searchIndex += nextClose[0].length;
+          } else if (nextOpen) {
+            // Scan to end of this open tag to see if it is self-closing
+            let tempIdx = searchIndex + nextOpen[0].length;
+            let tempInQuote = null;
+            let tempIsSelfClosing = false;
+            while (tempIdx &lt; currentTemplate.length) {
+              const tc = currentTemplate[tempIdx];
+              if (tempInQuote) {
+                if (tc === tempInQuote) tempInQuote = null;
+              } else if (tc === '"' || tc === "'") {
+                tempInQuote = tc;
+              } else if (tc === '>') {
+                const trimmedBefore = currentTemplate.substring(searchIndex + nextOpen[0].length, tempIdx).trim();
+                if (trimmedBefore.endsWith('/')) {
+                  tempIsSelfClosing = true;
+                }
+                tempIdx++;
+                break;
+              }
+              tempIdx++;
+            }
+            if (!tempIsSelfClosing) {
+              depth++;
+            }
+            searchIndex = tempIdx;
+          } else {
+            searchIndex++;
+          }
+        }
+
+        if (closingTagIndex === -1) {
+          // No matching closing tag, treat as self-closing
+          const replacement = `&lt;div ${replacementTag}${propsAttr}${othersAttr}>&lt;/div>`;
+          currentTemplate =
+            currentTemplate.substring(0, startIndex) + replacement + currentTemplate.substring(tagEndIndex);
+        } else {
+          const innerContent = currentTemplate.substring(tagEndIndex, closingTagIndex);
+          // Recursively process tags inside innerContent
+          const processedInner = this.processComponentTags(innerContent);
+          const replacement = `&lt;div ${replacementTag}${propsAttr}${othersAttr}>${processedInner}&lt;/div>`;
+          currentTemplate =
+            currentTemplate.substring(0, startIndex) +
+            replacement +
+            currentTemplate.substring(closingTagIndex + closingTagLength);
+        }
+      }
+    }
+    return currentTemplate;
+  }
+
+  /**
+   * Processes transition tags in the template, converting them to data-ax-transition attributes.
+   * @param {string} template - The HTML template string.
+   * @param {string} [filePath] - The component file path, used to resolve project-specific
+   *   void tags from `avenx.config.json` (see {@link getCustomVoidTags}).
+   * @returns {string} The processed template.
+   */
+  processTransitionTags(template, filePath) {
+    try {
+      const customVoidTags = [...(this.customVoidTags || []), ...getCustomVoidTags(filePath)];
+      const nodes = parseHTML(template, customVoidTags);
+      const processed = this.processTransitionTagsInTree(nodes);
+      return serializeHTML(processed, customVoidTags);
+    } catch (err) {
+      logger.warn(new TemplateValidationError(AvenxErrorCodes.COMPILER_TRANSITION_PARSE_FAILED, err).message);
+      return template;
+    }
+  }
+
+  /**
+   * Recursively processes transition tags in the node tree.
+   * @param {HTMLNode[]} nodes
+   * @returns {HTMLNode[]}
+   */
+  processTransitionTagsInTree(nodes) {
+    const result = [];
+    for (const node of nodes) {
+      if (node.type === 'element') {
+        if (node.tagName.toLowerCase() === 'transition') {
+          const nameAttr = node.attrs['name'];
+          let transitionValue = "'ax'";
+          if (nameAttr) {
+            if (nameAttr.startsWith('{{') &amp;&amp; nameAttr.endsWith('}}')) {
+              transitionValue = nameAttr.slice(2, -2).trim();
+            } else {
+              transitionValue = `'${nameAttr.replace(/'/g, "\\'")}'`;
+            }
+          }
+          const processedChildren = this.processTransitionTagsInTree(node.children);
+          for (const child of processedChildren) {
+            if (child.type === 'element') {
+              child.attrs['data-ax-transition'] = transitionValue;
+            }
+            result.push(child);
+          }
+        } else {
+          node.children = this.processTransitionTagsInTree(node.children);
+          result.push(node);
+        }
+      } else {
+        result.push(node);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Identifies static elements/subtrees and marks them with data-ax-static="true".
+   * @param {string} template - The compiled HTML template.
+   * @param {string} [filePath] - The component file path, used to resolve project-specific
+   *   void tags from `avenx.config.json` (see {@link getCustomVoidTags}).
+   * @returns {string} The optimized template.
+   */
+  optimizeStaticSubtrees(template, filePath) {
+    try {
+      const customVoidTags = [...(this.customVoidTags || []), ...getCustomVoidTags(filePath)];
+      const nodes = parseHTML(template, customVoidTags);
+      this.markStaticNodes(nodes, false);
+      return serializeHTML(nodes, customVoidTags);
+    } catch (err) {
+      logger.warn(new TemplateValidationError(AvenxErrorCodes.COMPILER_STATIC_SUBTREE_OPTIMIZATION_FAILED, err).message);
+      return template;
+    }
+  }
+
+  /**
+   * Recursively traverses nodes to find and mark the root of static subtrees.
+   * @param {HTMLNode[]} nodes
+   * @param {boolean} [parentIsStatic]
+   * @param {boolean} [inSlot] - Indicates if the current node is inside a slot or component transclusion boundary.
+   */
+  markStaticNodes(nodes, parentIsStatic = false, inSlot = false) {
+    for (const node of nodes) {
+      if (node.type === 'element') {
+        const lowerTag = node.tagName.toLowerCase();
+        const isSlot = lowerTag === 'slot';
+        const isComponent = Boolean(
+          node.attrs['data-avenx-comp'] || node.attrs['data-ax-comp'] || /^[A-Z]/.test(node.tagName)
+        );
+        const currentInSlot = inSlot || isSlot || isComponent;
+        const nodeStatic = !currentInSlot &amp;&amp; isStaticNode(node);
+        if (nodeStatic &amp;&amp; !parentIsStatic) {
+          node.attrs['data-ax-static'] = 'true';
+        }
+        this.markStaticNodes(node.children, nodeStatic, currentInSlot);
+      }
+    }
+  }
 }
 
-module.exports = ComponentParser;
+/**
+ * A lightweight node representation for parsing HTML templates.
+ */
+class HTMLNode {
+  /**
+   * Creates an instance of HTMLNode.
+   * @param {string} type - The node type.
+   * @param {string} [tagName] - The tag name.
+   * @param {Object} [attrs] - The attribute map.
+   * @param {boolean} [isSelfClosing] - Whether the tag is self-closing.
+   */
+  constructor(type, tagName = '', attrs = {}, isSelfClosing = false) {
+    this.type = type;
+    this.tagName = tagName;
+    this.attrs = attrs;
+    this.isSelfClosing = isSelfClosing;
+    this.line = null;
+    this.column = null;
+    /** @type {HTMLNode[]} */
+    this.children = [];
+    this.content = '';
+  }
+}
+
+/**
+ * Parses an attribute string into a key-value object.
+ *
+ * Handles three attribute forms:
+ *  - Quoted values: `name="value"` or `name='value'`. A backslash-escaped
+ *    quote (`\"` or `\'`) inside the value is preserved verbatim rather than
+ *    ending the value early, so expressions containing an apostrophe or a
+ *    quote character (e.g. `@click='say(\'hi\')'`) parse correctly instead
+ *    of being split into several bogus attributes.
+ *  - Unquoted values: `name=value`, read up to the next whitespace or `>`.
+ *  - Valueless boolean attributes: `disabled`, mapped to the string `'true'`
+ *    (matching the `attr="true"` / `attr="false"` convention the runtime's
+ *    boolean-attribute handling already expects, rather than `null`).
+ * @param {string} attrStr
+ * @returns {Object&lt;string, string>}
+ */
+function parseAttributes(attrStr) {
+  const attrs = {};
+  if (!attrStr) return attrs;
+
+  const len = attrStr.length;
+  const isWhitespace = (ch) => ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r';
+  const isNameChar = (ch) => /[@\w:.\-[\]]/.test(ch);
+
+  let i = 0;
+  while (i &lt; len) {
+    // Skip whitespace between attributes.
+    while (i &lt; len &amp;&amp; isWhitespace(attrStr[i])) i++;
+    if (i >= len) break;
+
+    // Read the attribute name.
+    const nameStart = i;
+    while (i &lt; len &amp;&amp; isNameChar(attrStr[i])) i++;
+    if (i === nameStart) {
+      // Stray character that isn't part of a valid attribute name; skip it
+      // so a malformed fragment can't stall the scan in an infinite loop.
+      i++;
+      continue;
+    }
+    const name = attrStr.slice(nameStart, i);
+
+    // Look ahead (past whitespace) for an '=' sign.
+    let lookahead = i;
+    while (lookahead &lt; len &amp;&amp; isWhitespace(attrStr[lookahead])) lookahead++;
+
+    if (attrStr[lookahead] === '=') {
+      i = lookahead + 1;
+      while (i &lt; len &amp;&amp; isWhitespace(attrStr[i])) i++;
+
+      const quote = attrStr[i];
+      if (quote === '"' || quote === "'") {
+        i++;
+        let value = '';
+        while (i &lt; len) {
+          const ch = attrStr[i];
+          if (ch === '\\' &amp;&amp; i + 1 &lt; len) {
+            value += ch + attrStr[i + 1];
+            i += 2;
+            continue;
+          }
+          if (ch === quote) {
+            i++;
+            break;
+          }
+          value += ch;
+          i++;
+        }
+        attrs[name] = value;
+      } else {
+        // Unquoted value: read until whitespace or the tag's closing '>'.
+        const valueStart = i;
+        while (i &lt; len &amp;&amp; !isWhitespace(attrStr[i]) &amp;&amp; attrStr[i] !== '>') i++;
+        attrs[name] = attrStr.slice(valueStart, i);
+      }
+    } else {
+      // Valueless boolean attribute, e.g. `disabled`.
+      attrs[name] = 'true';
+    }
+  }
+
+  return attrs;
+}
+
+/**
+ * Parses an HTML string into a tree of HTMLNode elements.
+ * @param {string} html
+ * @param {string[]} [customVoidTags] - Additional project-specific void tag
+ *   names (lowercase), loaded from `avenx.config.json`. Merged on top of
+ *   {@link DEFAULT_VOID_TAGS}. Regardless of this list, any tag that is
+ *   written with a self-closing slash (e.g. `&lt;my-video />`) is always
+ *   treated as void so it never requires a matching closing tag.
+ * @returns {HTMLNode[]}
+ */
+/**
+ * Calculates 1-based line and column numbers for a character offset in a source string.
+ * @param {string} source - The original source code string.
+ * @param {number} offset - The zero-based character index.
+ * @returns {{ line: number, column: number }}
+ */
+function getLineAndColumn(source, offset) {
+  let line = 1;
+  let lastNewline = -1;
+  for (let i = 0; i &lt; offset &amp;&amp; i &lt; source.length; i++) {
+    if (source[i] === '\n') {
+      line++;
+      lastNewline = i;
+    }
+  }
+  const column = offset - lastNewline;
+  return { line, column };
+}
+
+/**
+ * Parses an HTML string into a tree of HTMLNode elements with positional metadata.
+ * @param {string} html
+ * @param {string[]} [customVoidTags]
+ * @returns {HTMLNode[]}
+ */
+function parseHTML(html, customVoidTags = []) {
+  const root = new HTMLNode('element', 'root');
+  const stack = [root];
+  let i = 0;
+
+  const voidTags = buildVoidTagsSet(customVoidTags);
+
+  while (i &lt; html.length) {
+    // 1. Check for comment
+    if (html.startsWith('&lt;!--', i)) {
+      const pos = getLineAndColumn(html, i);
+      const endIdx = html.indexOf('-->', i + 4);
+      if (endIdx === -1) {
+        const node = new HTMLNode('comment');
+        node.content = html.substring(i + 4);
+        node.line = pos.line;
+        node.column = pos.column;
+        stack[stack.length - 1].children.push(node);
+        break;
+      } else {
+        const node = new HTMLNode('comment');
+        node.content = html.substring(i + 4, endIdx);
+        node.line = pos.line;
+        node.column = pos.column;
+        stack[stack.length - 1].children.push(node);
+        i = endIdx + 3;
+        continue;
+      }
+    }
+
+    // 2. Check for closing tag
+    if (html.startsWith('&lt;/', i)) {
+      const pos = getLineAndColumn(html, i);
+      const endIdx = html.indexOf('>', i + 2);
+      if (endIdx === -1) {
+        const textNode = new HTMLNode('text');
+        textNode.content = html.substring(i);
+        textNode.line = pos.line;
+        textNode.column = pos.column;
+        stack[stack.length - 1].children.push(textNode);
+        break;
+      } else {
+        const tagName = html.substring(i + 2, endIdx).trim();
+        let foundIdx = -1;
+        for (let j = stack.length - 1; j > 0; j--) {
+          if (stack[j].tagName.toLowerCase() === tagName.toLowerCase()) {
+            foundIdx = j;
+            break;
+          }
+        }
+        if (foundIdx !== -1) {
+          while (stack.length > foundIdx) {
+            stack.pop();
+          }
+        }
+        // If foundIdx === -1, silently skip unmatched closing tag
+        // to maintain backward compatibility with permissive template transforms
+        i = endIdx + 1;
+        continue;
+      }
+    }
+
+    // 3. Check for opening/self-closing tag
+    if (html[i] === '&lt;') {
+      const pos = getLineAndColumn(html, i);
+      let tagEndIdx = -1;
+      let inQuote = null;
+      let tempIdx = i + 1;
+      while (tempIdx &lt; html.length) {
+        const c = html[tempIdx];
+        if (inQuote) {
+          if (c === '\\') {
+            tempIdx++;
+          } else if (c === inQuote) {
+            inQuote = null;
+          }
+        } else if (c === '"' || c === "'") {
+          inQuote = c;
+        } else if (c === '>') {
+          tagEndIdx = tempIdx;
+          break;
+        }
+        tempIdx++;
+      }
+
+      if (tagEndIdx !== -1) {
+        const tagContent = html.substring(i + 1, tagEndIdx).trim();
+        const isSelfClosing = tagContent.endsWith('/');
+        const cleanContent = isSelfClosing ? tagContent.slice(0, -1).trim() : tagContent;
+
+        const spaceIdx = cleanContent.search(/\s/);
+        const tagName = spaceIdx === -1 ? cleanContent : cleanContent.substring(0, spaceIdx);
+        const attrsStr = spaceIdx === -1 ? '' : cleanContent.substring(spaceIdx).trim();
+
+        if (/^[a-zA-Z0-9:-]+$/.test(tagName)) {
+          const attrs = parseAttributes(attrsStr);
+          const isVoid = voidTags.has(tagName.toLowerCase());
+          const node = new HTMLNode('element', tagName, attrs, isSelfClosing || isVoid);
+          node.line = pos.line;
+          node.column = pos.column;
+
+          stack[stack.length - 1].children.push(node);
+
+          if (!isSelfClosing &amp;&amp; !isVoid) {
+            stack.push(node);
+          }
+          i = tagEndIdx + 1;
+          continue;
+        }
+      }
+    }
+
+    // 4. Text node
+    const textPos = getLineAndColumn(html, i);
+    let nextTagIdx = html.indexOf('&lt;', i + 1);
+    if (nextTagIdx === -1) {
+      nextTagIdx = html.length;
+    }
+    const text = html.substring(i, nextTagIdx);
+    if (text) {
+      const parentNode = stack[stack.length - 1];
+      const parts = text.split(/(\{\{\{[\s\S]*?\}\}\}|\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\})/g);
+      for (const part of parts) {
+        if (!part) continue;
+        const isDynamic = part.includes('{{') || part.includes('{%');
+        const lastChild = parentNode.children[parentNode.children.length - 1];
+        if (
+          lastChild &amp;&amp;
+          lastChild.type === 'text' &amp;&amp;
+          !isDynamic &amp;&amp;
+          !(lastChild.content.includes('{{') || lastChild.content.includes('{%'))
+        ) {
+          lastChild.content += part;
+        } else {
+          const textNode = new HTMLNode('text');
+          textNode.content = part;
+          textNode.line = textPos.line;
+          textNode.column = textPos.column;
+          parentNode.children.push(textNode);
+        }
+      }
+    }
+    i = nextTagIdx;
+  }
+
+  return root.children;
+}
+
+/**
+ * Serializes an HTMLNode tree back to an HTML string.
+ * @param {HTMLNode[]} nodes
+ * @param {string[]} [customVoidTags] - Additional project-specific void tag
+ *   names (lowercase), loaded from `avenx.config.json`. Should match what
+ *   was passed to {@link parseHTML} for the same template so a custom void
+ *   tag round-trips consistently.
+ * @returns {string}
+ */
+function serializeHTML(nodes, customVoidTags = []) {
+  let result = '';
+  const voidTags = buildVoidTagsSet(customVoidTags);
+  for (const node of nodes) {
+    if (node.type === 'text') {
+      result += node.content;
+    } else if (node.type === 'comment') {
+      result += `&lt;!--${node.content}-->`;
+    } else if (node.type === 'element') {
+      let attrsStr = '';
+      for (const [name, val] of Object.entries(node.attrs)) {
+        if (val === null || val === undefined) {
+          attrsStr += ` ${name}`;
+        } else {
+          const escapedVal = String(val).replace(/"/g, '&amp;quot;');
+          attrsStr += ` ${name}="${escapedVal}"`;
+        }
+      }
+      if (voidTags.has(node.tagName.toLowerCase()) || node.isSelfClosing) {
+        result += `&lt;${node.tagName}${attrsStr} />`;
+      } else {
+        result += `&lt;${node.tagName}${attrsStr}>${serializeHTML(node.children, customVoidTags)}&lt;/${node.tagName}>`;
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Recursively checks whether a node is a &lt;slot> tag, or has a &lt;slot>
+ * anywhere among its descendants. Used to disqualify a subtree from the
+ * static-optimization pass, since slots are dynamic transclusion points
+ * that DomPatcher must always be able to patch (see issue #200).
+ * @param {HTMLNode} node
+ * @returns {boolean}
+ */
+function containsSlot(node) {
+  if (node.type !== 'element') {
+    return false;
+  }
+  if (node.tagName.toLowerCase() === 'slot') {
+    return true;
+  }
+  return node.children.some((child) => containsSlot(child));
+}
+
+/**
+ * Recursively determines if a node (and all its descendants) are completely static.
+ * @param {HTMLNode} node
+ * @returns {boolean}
+ */
+function isStaticNode(node) {
+  if (node.type === 'text') {
+    if (node.content.includes('{{') || node.content.includes('{%')) {
+      return false;
+    }
+    return true;
+  }
+
+  if (node.type === 'comment') {
+    return true;
+  }
+
+  if (node.type === 'element') {
+    const lowerTag = node.tagName.toLowerCase();
+    if (lowerTag === 'template' || lowerTag === 'slot') {
+      return false;
+    }
+
+    // A wrapper that contains a &lt;slot> anywhere beneath it must never be
+    // marked static: slot content is transcluded dynamically per-instance,
+    // so a static-tagged ancestor would cause DomPatcher to skip patching
+    // it entirely and slot updates would be silently dropped.
+    if (containsSlot(node)) {
+      return false;
+    }
+
+    if (/^[A-Z]/.test(node.tagName)) {
+      return false;
+    }
+
+    for (const [name, val] of Object.entries(node.attrs)) {
+      if (name.startsWith('@') || name.startsWith(':[')) {
+        return false;
+      }
+      if ((name.startsWith('data-ax-') &amp;&amp; name !== 'data-ax-static') || name.startsWith('data-avenx-')) {
+        return false;
+      }
+      if (val &amp;&amp; (val.includes('{{') || val.includes('{%'))) {
+        return false;
+      }
+    }
+
+    for (const child of node.children) {
+      if (!isStaticNode(child)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+ComponentParser.parseHTML = parseHTML;
+
+export default ComponentParser;
 </code></pre>
         </article>
     </section>
@@ -465,13 +2007,13 @@ module.exports = ComponentParser;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

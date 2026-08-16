@@ -35,7 +35,7 @@
 
 /**
  * Registry of unique Avenx error/warning codes.
- * @typedef {Object} AvenxErrorCodesType
+ * @typedef {object} AvenxErrorCodesType
  * @property {string} COMPILER_DIST_CREATION_FAILED - AVX_C01: Failed to create the build output directory.
  * @property {string} COMPILER_SRC_DIR_MISSING - AVX_C02: The source directory ('src') does not exist.
  * @property {string} MOUNT_TARGET_NOT_FOUND - AVX_R01: The specified target container element was not found in the DOM.
@@ -47,25 +47,74 @@
  * @property {string} ROUTER_GUARD_ERROR - AVX_R07: An unhandled exception occurred within a route guard's canActivate method.
  * @property {string} TEMPLATE_RENDER_ERROR - AVX_R08: Failed to interpolate expression values within component template.
  * @property {string} EVENT_HANDLER_ERROR - AVX_R09: Executing an event action callback statement failed.
+ * @property {string} ROUTER_GUARD_TIMEOUT - AVX_R14: A navigation guard execution timed out.
+ * @property {string} ROUTER_GUARD_UNDEFINED_RETURN - AVX_W27: A navigation guard returned undefined.
+ * @property {string} COMPILER_MULTIPLE_STATE_TAGS - AVX_W28: Multiple &lt;state> tags; only the first is used.
+ * @property {string} SANDBOX_VIOLATION - AVX_R15: A sandbox security violation occurred.
+ * @property {string} STATE_DIRECT_REASSIGNMENT - AVX_R16: Component state was reassigned directly instead of mutated.
+ * @property {string} BRIDGE_CONSTRUCTION_FAILED - AVX_R17: Failed to construct a bridge instance from a class function.
  */
 
 /** @type {AvenxErrorCodesType} */
 export const AvenxErrorCodes = {
-    // Compiler Errors (AVX_C*)
-    COMPILER_DIST_CREATION_FAILED: 'AVX_C01',
-    COMPILER_SRC_DIR_MISSING: 'AVX_C02',
+  // Compiler Errors (AVX_C*)
+  COMPILER_DIST_CREATION_FAILED: 'AVX_C01',
+  COMPILER_SRC_DIR_MISSING: 'AVX_C02',
+  COMPILER_DUPLICATE_COMPONENT_NAME: 'AVX_C03',
 
-    // Runtime Errors (AVX_R*)
-    MOUNT_TARGET_NOT_FOUND: 'AVX_R01',
-    PAGE_NOT_FOUND: 'AVX_R02',
-    COMPONENT_NOT_FOUND: 'AVX_R03',
-    COMPUTED_CIRCULAR_DEPENDENCY: 'AVX_R04',
-    COMPUTED_EVALUTION_FAILED: 'AVX_R05',
-    ROUTER_GUARD_DENIED: 'AVX_R06',
-    ROUTER_GUARD_ERROR: 'AVX_R07',
-    TEMPLATE_RENDER_ERROR: 'AVX_R08',
-    EVENT_HANDLER_ERROR: 'AVX_R09',
-    BRIDGE_ALREADY_EXISTS: 'AVX_R10'
+  // Runtime Errors (AVX_R*)
+  MOUNT_TARGET_NOT_FOUND: 'AVX_R01',
+  PAGE_NOT_FOUND: 'AVX_R02',
+  COMPONENT_NOT_FOUND: 'AVX_R03',
+  COMPUTED_CIRCULAR_DEPENDENCY: 'AVX_R04',
+  COMPUTED_EVALUTION_FAILED: 'AVX_R05',
+  ROUTER_GUARD_DENIED: 'AVX_R06',
+  ROUTER_GUARD_ERROR: 'AVX_R07',
+  TEMPLATE_RENDER_ERROR: 'AVX_R08',
+  EVENT_HANDLER_ERROR: 'AVX_R09',
+  BRIDGE_ALREADY_EXISTS: 'AVX_R10',
+  STATE_MUTATION_IN_UPDATE: 'AVX_R11',
+  LIFECYCLE_HOOK_ERROR: 'AVX_R12',
+  DOM_PARSING_FAILED: 'AVX_R13',
+  ROUTER_GUARD_TIMEOUT: 'AVX_R14',
+  SANDBOX_VIOLATION: 'AVX_R15',
+  STATE_DIRECT_REASSIGNMENT: 'AVX_R16',
+  BRIDGE_CONSTRUCTION_FAILED: 'AVX_R17',
+
+  // Compiler Warnings (AVX_W*)
+  COMPILER_BUNDLE_SIZE_EXCEEDED: 'AVX_W01',
+  COMPILER_EMPTY_TEMPLATE: 'AVX_W02',
+  COMPILER_UNDECLARED_REFERENCE: 'AVX_W03',
+  COMPILER_UNMATCHED_FOR_TAG: 'AVX_W04',
+  COMPILER_TRANSITION_PARSE_FAILED: 'AVX_W05',
+  COMPILER_STATIC_SUBTREE_OPTIMIZATION_FAILED: 'AVX_W06',
+  COMPILER_PREPROCESSOR_MISSING: 'AVX_W24',
+  COMPILER_INVALID_CONFIG: 'AVX_W25',
+  COMPONENT_METHOD_RESERVED_KEY_COLLISION: 'AVX_W26',
+  COMPILER_CIRCULAR_DEPENDENCY: 'AVX_W29',
+  COMPILER_DUPLICATE_ID_ATTRIBUTE: 'AVX_W30',
+  COMPILER_PREPROCESSOR_FAILED: 'AVX_W31',
+
+  // Runtime Warnings (AVX_W*)
+  PAGE_ALREADY_REGISTERED: 'AVX_W07',
+  ROUTE_PATH_MISSING_LEADING_SLASH: 'AVX_W08',
+  ROUTE_PARAM_DECODE_FAILED: 'AVX_W09',
+  ROUTE_NOT_FOUND: 'AVX_W10',
+  ROUTE_TITLE_EVALUATION_FAILED: 'AVX_W11',
+  PAGE_PROP_EVALUATION_FAILED: 'AVX_W12',
+  PAGE_COMPONENT_NOT_REGISTERED: 'AVX_W13',
+  COMPONENT_RESTORE_SLOT_CONTENT_FAILED: 'AVX_W14',
+  COMPONENT_INJECT_KEY_NOT_FOUND: 'AVX_W15',
+  SECURITY_SANITIZED_TAG: 'AVX_W16',
+  SECURITY_SANITIZED_ATTRIBUTE: 'AVX_W17',
+  RENDER_LIST_EVALUATION_FAILED: 'AVX_W18',
+  RENDER_KEY_EVALUATION_FAILED: 'AVX_W19',
+  RENDER_LIST_DUPLICATE_KEY: 'AVX_W20',
+  DIRECTIVE_HTML_EVALUATION_FAILED: 'AVX_W21',
+  DIRECTIVE_SHOW_EVALUATION_FAILED: 'AVX_W22',
+  DIRECTIVE_CLASS_EVALUATION_FAILED: 'AVX_W23',
+  ROUTER_GUARD_UNDEFINED_RETURN: 'AVX_W27',
+  COMPILER_MULTIPLE_STATE_TAGS: 'AVX_W28',
 };
 
 /**
@@ -74,48 +123,106 @@ export const AvenxErrorCodes = {
  * @type {Object&lt;string, string>}
  */
 export const AvenxErrorMessages = {
-    [AvenxErrorCodes.COMPILER_DIST_CREATION_FAILED]: 'Could not create dist directory at "{0}".',
-    [AvenxErrorCodes.COMPILER_SRC_DIR_MISSING]: '"src" directory not found at "{0}". Run "avenx init" to scaffold a project.',
-    [AvenxErrorCodes.MOUNT_TARGET_NOT_FOUND]: 'Mount target selector "{0}" was not found in the DOM.',
-    [AvenxErrorCodes.PAGE_NOT_FOUND]: 'Page "{0}" is not registered. Ensure page class is named correctly.',
-    [AvenxErrorCodes.COMPONENT_NOT_FOUND]: 'Component "{0}" is not registered. Registered components: {1}',
-    [AvenxErrorCodes.COMPUTED_CIRCULAR_DEPENDENCY]: 'Circular dependency detected in computed property "{0}".',
-    [AvenxErrorCodes.COMPUTED_EVALUTION_FAILED]: 'Failed to evaluate computed property "{0}". Expression: "{1}". Error: {2}',
-    [AvenxErrorCodes.ROUTER_GUARD_DENIED]: 'Navigation guard denied transition to route "{0}".',
-    [AvenxErrorCodes.ROUTER_GUARD_ERROR]: 'Navigation guard threw an error during evaluation for route "{0}": {1}',
-    [AvenxErrorCodes.TEMPLATE_RENDER_ERROR]: 'Failed to render interpolation expression "{0}". Error: {1}',
-    [AvenxErrorCodes.EVENT_HANDLER_ERROR]: 'Event handler execution failed for statement "{0}". Error: {1}',
-    [AvenxErrorCodes.BRIDGE_ALREADY_EXISTS]: 'Bridge "{0}" is already registered. Available bridges: {1}. Suggestion: {2}'
+  [AvenxErrorCodes.COMPILER_DIST_CREATION_FAILED]: 'Could not create dist directory at "{0}".',
+  [AvenxErrorCodes.COMPILER_SRC_DIR_MISSING]:
+    '"src" directory not found at "{0}". Run "avenx init" to scaffold a project.',
+  [AvenxErrorCodes.COMPILER_DUPLICATE_COMPONENT_NAME]:
+    'Duplicate component name(s) detected. These files compile to the same class name:\n{0}\nFix by renaming or moving one of the files (e.g. "card.component.js" -> "profile-card.component.js").',
+  [AvenxErrorCodes.MOUNT_TARGET_NOT_FOUND]: 'Mount target selector "{0}" was not found in the DOM.',
+  [AvenxErrorCodes.PAGE_NOT_FOUND]: 'Page "{0}" is not registered. Ensure page class is named correctly.',
+  [AvenxErrorCodes.COMPONENT_NOT_FOUND]: 'Component "{0}" is not registered. Registered components: {1}',
+  [AvenxErrorCodes.COMPUTED_CIRCULAR_DEPENDENCY]: 'Circular dependency detected in computed property "{0}".',
+  [AvenxErrorCodes.COMPUTED_EVALUTION_FAILED]:
+    'Failed to evaluate computed property "{0}". Expression: "{1}". Error: {2}',
+  [AvenxErrorCodes.ROUTER_GUARD_DENIED]: 'Navigation guard denied transition to route "{0}".',
+  [AvenxErrorCodes.ROUTER_GUARD_ERROR]: 'Navigation guard threw an error during evaluation for route "{0}": {1}',
+  [AvenxErrorCodes.TEMPLATE_RENDER_ERROR]: 'Failed to render interpolation expression "{0}". Error: {1}',
+  [AvenxErrorCodes.EVENT_HANDLER_ERROR]: 'Event handler execution failed for statement "{0}". Error: {1}',
+  [AvenxErrorCodes.BRIDGE_ALREADY_EXISTS]:
+    'Bridge "{0}" is already registered. Available bridges: {1}. Suggestion: {2}',
+  [AvenxErrorCodes.STATE_MUTATION_IN_UPDATE]:
+    'State mutation detected during the update/render lifecycle. Avoid modifying component state inside templates, getters, computed property definitions, or lifecycle hooks like onUpdate.',
+  [AvenxErrorCodes.LIFECYCLE_HOOK_ERROR]: 'Error in component "{0}" during lifecycle hook "{1}": {2}',
+  [AvenxErrorCodes.DOM_PARSING_FAILED]:
+    'DOM parsing failed due to malformed HTML. Parser error: {0}. HTML context: "{1}"',
+  [AvenxErrorCodes.ROUTER_GUARD_TIMEOUT]: 'Navigation guard timed out after {0}ms for route "{1}".',
+  [AvenxErrorCodes.SANDBOX_VIOLATION]: 'Sandbox security violation: {0}',
+  [AvenxErrorCodes.STATE_DIRECT_REASSIGNMENT]:
+    'Cannot reassign component state directly (e.g. "this.state = {...}"). Reassigning the entire state object replaces the reactive Proxy and breaks change detection. Mutate individual properties instead, e.g. "this.state.propertyName = value" or "Object.assign(this.state, {...})".',
+  [AvenxErrorCodes.BRIDGE_CONSTRUCTION_FAILED]: 'Failed to construct bridge "{0}". Constructor threw an error: {1}',
+
+  // Compiler Warnings (AVX_W01 - AVX_W06)
+  [AvenxErrorCodes.COMPILER_BUNDLE_SIZE_EXCEEDED]: 'WARNING: {0} exceeds {1} KB ({2} KB)',
+  [AvenxErrorCodes.COMPILER_EMPTY_TEMPLATE]: 'Component "{0}" has an empty template.',
+  [AvenxErrorCodes.COMPILER_UNDECLARED_REFERENCE]: 'Undeclared variable or method "{0}" referenced in template of {1}.',
+  [AvenxErrorCodes.COMPILER_UNMATCHED_FOR_TAG]: 'Unmatched &lt;@for> tags in template.',
+  [AvenxErrorCodes.COMPILER_TRANSITION_PARSE_FAILED]: 'Failed to parse transition tags: {0}',
+  [AvenxErrorCodes.COMPILER_STATIC_SUBTREE_OPTIMIZATION_FAILED]: 'Failed to optimize static subtrees: {0}',
+  [AvenxErrorCodes.COMPILER_PREPROCESSOR_MISSING]:
+    'Preprocessor module "{0}" is not installed. Falling back to raw CSS.',
+  [AvenxErrorCodes.COMPILER_INVALID_CONFIG]: 'Failed to parse avenx.config.json at "{0}": {1}',
+  [AvenxErrorCodes.COMPONENT_METHOD_RESERVED_KEY_COLLISION]:
+    'Method name "{0}" in component "{1}" collides with a reserved lifecycle hook or instance method.',
+  [AvenxErrorCodes.COMPILER_PREPROCESSOR_FAILED]: 'Error compiling {0}: {1}',
+
+  // Runtime Warnings (AVX_W07 - AVX_W23)
+  [AvenxErrorCodes.PAGE_ALREADY_REGISTERED]: 'Page "{0}" is already registered and will be overwritten.',
+  [AvenxErrorCodes.ROUTE_PATH_MISSING_LEADING_SLASH]:
+    'Route path "{0}" lacks a leading slash. This may prevent hash paths from resolving properly.',
+  [AvenxErrorCodes.ROUTE_PARAM_DECODE_FAILED]: 'Failed to decode route parameter "{0}": {1}',
+  [AvenxErrorCodes.ROUTE_NOT_FOUND]: 'No route defined for hash: {0}',
+  [AvenxErrorCodes.ROUTE_TITLE_EVALUATION_FAILED]: 'title() threw an error: {0}',
+  [AvenxErrorCodes.PAGE_PROP_EVALUATION_FAILED]: 'Failed to evaluate prop expression: {0}. Error: {1}',
+  [AvenxErrorCodes.PAGE_COMPONENT_NOT_REGISTERED]: "Component '{0}' not found in registry.",
+  [AvenxErrorCodes.COMPONENT_RESTORE_SLOT_CONTENT_FAILED]: 'Failed to restore default slot content. Error: {0}',
+  [AvenxErrorCodes.COMPONENT_INJECT_KEY_NOT_FOUND]: 'Injected key "{0}" not found in any ancestor component.',
+  [AvenxErrorCodes.SECURITY_SANITIZED_TAG]: 'Sanitized tag "&lt;{0}>" when stripping content.',
+  [AvenxErrorCodes.SECURITY_SANITIZED_ATTRIBUTE]: 'Sanitized attribute "{0}" when stripping content.',
+  [AvenxErrorCodes.RENDER_LIST_EVALUATION_FAILED]: 'Failed to evaluate list expression: {0} in component &lt;{2}>. Error: {1}',
+  [AvenxErrorCodes.RENDER_KEY_EVALUATION_FAILED]: 'Failed to evaluate key expression: {0}. Error: {1}',
+  [AvenxErrorCodes.RENDER_LIST_DUPLICATE_KEY]:
+    'Duplicate key "{0}" detected in list expression "{1}". Appending index suffix to prevent node reuse conflict.',
+  [AvenxErrorCodes.DIRECTIVE_HTML_EVALUATION_FAILED]: 'Failed to evaluate data-ax-html: {0}. Error: {1}',
+  [AvenxErrorCodes.DIRECTIVE_SHOW_EVALUATION_FAILED]: 'Failed to evaluate data-ax-show: {0}. Error: {1}',
+  [AvenxErrorCodes.DIRECTIVE_CLASS_EVALUATION_FAILED]: 'Failed to evaluate data-ax-class: {0}. Error: {1}',
+  [AvenxErrorCodes.ROUTER_GUARD_UNDEFINED_RETURN]:
+    'Navigation guard for route "{0}" returned undefined. Guards should explicitly return true, false, a redirect string, or a control object. Defaulting to allow.',
+  [AvenxErrorCodes.COMPILER_MULTIPLE_STATE_TAGS]:
+    'Multiple &lt;state> tags found in component source. Only the first &lt;state> declaration is reactive; subsequent tags are ignored.',
+  [AvenxErrorCodes.COMPILER_CIRCULAR_DEPENDENCY]:
+    'Circular dependency detected in component imports: {0}',
+  [AvenxErrorCodes.COMPILER_DUPLICATE_ID_ATTRIBUTE]:
+    'Duplicate static id attribute "{0}" detected in template of {1}. Static IDs must be unique and should not be used inside loops.',
 };
 
 /**
  * Custom Error class representing an Avenx-JS framework error.
  * Includes structured code identifiers and formatted messages.
- * @extends Error
+ * @augments Error
  */
 export class AvenxError extends Error {
+  /**
+   * Creates an instance of AvenxError.
+   * @param {string} code - The AvenxErrorCode identifier.
+   * @param {...any} args - Arguments to format within the template message.
+   */
+  constructor(code, ...args) {
+    let message = AvenxErrorMessages[code] || 'An unknown framework error occurred.';
+    args.forEach((arg, idx) => {
+      message = message.replace(`{${idx}}`, String(arg));
+    });
+    super(`[${code}] ${message}`);
     /**
-     * Creates an instance of AvenxError.
-     * @param {string} code - The AvenxErrorCode identifier.
-     * @param {...any} args - Arguments to format within the template message.
+     * The unique framework error code.
+     * @type {string}
      */
-    constructor(code, ...args) {
-        let message = AvenxErrorMessages[code] || 'An unknown framework error occurred.';
-        args.forEach((arg, idx) => {
-            message = message.replace(`{${idx}}`, String(arg));
-        });
-        super(`[${code}] ${message}`);
-        /**
-         * The unique framework error code.
-         * @type {string}
-         */
-        this.code = code;
-        /**
-         * Custom name identifier for the error.
-         * @type {string}
-         */
-        this.name = 'AvenxError';
-    }
+    this.code = code;
+    /**
+     * Custom name identifier for the error.
+     * @type {string}
+     */
+    this.name = 'AvenxError';
+  }
 }
 
 /**
@@ -125,13 +232,12 @@ export class AvenxError extends Error {
  * @returns {string} The formatted warning message containing the error code and content.
  */
 export function formatMessage(code, ...args) {
-    let message = AvenxErrorMessages[code] || 'An unknown framework error occurred.';
-    args.forEach((arg, idx) => {
-        message = message.replace(`{${idx}}`, String(arg));
-    });
-    return `[${code}] ${message}`;
+  let message = AvenxErrorMessages[code] || 'An unknown framework error occurred.';
+  args.forEach((arg, idx) => {
+    message = message.replace(`{${idx}}`, String(arg));
+  });
+  return `[${code}] ${message}`;
 }
-
 </code></pre>
         </article>
     </section>
@@ -142,13 +248,13 @@ export function formatMessage(code, ...args) {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

@@ -26,96 +26,220 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>/**
+            <pre class="prettyprint source linenums"><code>import { AvenxErrorCodes } from '../core/runtime/AvenxError.js';
+import { TemplateValidationError } from './errors/TemplateValidationError.js';
+import { reportWarning } from './utils/warningReporter.js';
+
+/**
  * ExpressionParser is responsible for extracting state, computed properties,
  * and methods from Avenx component source code.
  */
 class ExpressionParser {
-    /**
-     * Extracts the initial state from &lt;state /> tags.
-     * @param {string} content - The component source code.
-     * @returns {Object} The extracted state object.
-     */
-    parseState(content) {
-        const state = {};
-        const match = content.match(/&lt;state\s+([\s\S]*?)\s*\/>/);
-        if (match) {
-            const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-            let m;
-            while ((m = attrRegex.exec(match[1])) !== null) {
-                const k = m[1];
-                const val = m[2] !== undefined ? m[2] : m[3];
-                state[k] = this.#coerceValue(val);
-            }
+  /**
+   * @param {object} [config] - Project configuration object.
+   */
+  constructor(config = null) {
+    this.config = config;
+  }
+
+  /**
+   * Extracts the initial state from &lt;state /> tags.
+   * @param {string} content - The component source code.
+   * @param {object} [config] - Optional override configuration object.
+   * @returns {object} The extracted state object.
+   */
+  parseState(content, config = null) {
+    const activeConfig = config || this.config;
+    const state = {};
+    const stateTags = content.match(/&lt;state\s+[\s\S]*?\s*\/>/g) || [];
+    if (stateTags.length > 1) {
+      reportWarning(
+        AvenxErrorCodes.COMPILER_MULTIPLE_STATE_TAGS,
+        new TemplateValidationError(AvenxErrorCodes.COMPILER_MULTIPLE_STATE_TAGS),
+        activeConfig,
+      );
+    }
+    const match = content.match(/&lt;state\s+([\s\S]*?)\s*\/>/);
+    if (match) {
+      const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let m;
+      while ((m = attrRegex.exec(match[1])) !== null) {
+        const k = m[1];
+        const val = m[2] !== undefined ? m[2] : m[3];
+        state[k] = this.#coerceValue(val);
+      }
+    }
+    return state;
+  }
+
+  /**
+   * Coerces a string value to its proper JavaScript type.
+   * @param {string} val - The raw string value.
+   * @returns {any} The coerced value.
+   * @private
+   */
+  #coerceValue(val) {
+    const trimmed = val.trim();
+    if (trimmed === 'true') return true;
+    if (trimmed === 'false') return false;
+    if (trimmed === 'null') return null;
+    if (trimmed !== '' &amp;&amp; !isNaN(trimmed)) return Number(trimmed);
+
+    try {
+      return JSON.parse(val);
+    } catch {
+      try {
+        return JSON.parse(val.replace(/'/g, '"'));
+      } catch {
+        return val;
+      }
+    }
+  }
+
+  /**
+   * Extracts computed property definitions from &lt;computed /> tags.
+   * @param {string} content - The component source code.
+   * @returns {object} A map of computed property names to their expressions.
+   */
+  parseComputed(content) {
+    const computed = {};
+    const regex = /&lt;computed\s+([\s\S]*?)\s*\/>/g;
+    let m;
+    while ((m = regex.exec(content)) !== null) {
+      const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let attrMatch;
+      let name = null;
+      let value = null;
+      while ((attrMatch = attrRegex.exec(m[1])) !== null) {
+        const k = attrMatch[1];
+        const val = attrMatch[2] !== undefined ? attrMatch[2] : attrMatch[3];
+        if (k === 'name') name = val;
+        if (k === 'value') value = val;
+      }
+      if (name &amp;&amp; value !== null) {
+        computed[name] = value;
+      }
+    }
+    return computed;
+  }
+
+  /**
+   * Extracts method definitions from &lt;action /> tags.
+   * @param {string} content - The component source code.
+   * @returns {object} A map of method names to their source code.
+   */
+  parseMethods(content) {
+    const methods = {};
+    const actionRegex = /&lt;action\s+([\s\S]*?)>([\s\S]*?)&lt;\/action>/g;
+    let m;
+    while ((m = actionRegex.exec(content)) !== null) {
+      const attrs = m[1];
+      const body = m[2];
+      const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let attrMatch;
+      let name = null;
+      while ((attrMatch = attrRegex.exec(attrs)) !== null) {
+        const k = attrMatch[1];
+        const val = attrMatch[2] !== undefined ? attrMatch[2] : attrMatch[3];
+        if (k === 'name') {
+          name = val;
+          break;
         }
-        return state;
+      }
+      if (name) {
+        methods[name] = body.trim();
+      }
+    }
+    return methods;
+  }
+
+  /**
+   * Extracts resource definitions from &lt;resource /> tags.
+   * @param {string} content - The component source code.
+   * @returns {object} A map of resource names to their handler expressions.
+   */
+  parseResources(content) {
+    const resources = {};
+
+    // 1. Block syntax: &lt;resource name="xxx" pollInterval="5000">body&lt;/resource>
+    const blockRegex = /&lt;resource\s+([\s\S]*?)>([\s\S]*?)&lt;\/resource>/g;
+    let bm;
+    while ((bm = blockRegex.exec(content)) !== null) {
+      const attrs = bm[1];
+      const body = bm[2];
+      const attrRegex = /(?::)?(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let attrMatch;
+      let name = null;
+      let pollInterval = null;
+      while ((attrMatch = attrRegex.exec(attrs)) !== null) {
+        const k = attrMatch[1];
+        const val = attrMatch[2] !== undefined ? attrMatch[2] : attrMatch[3];
+        if (k === 'name') {
+          name = val;
+        } else if (k === 'pollInterval') {
+          pollInterval = Number(val);
+        }
+      }
+      if (name) {
+        let cleanBody = body.trim();
+        if (!cleanBody.startsWith('return') &amp;&amp; !cleanBody.includes(';')) {
+          cleanBody = `return ${cleanBody};`;
+        }
+        if (pollInterval !== null &amp;&amp; !isNaN(pollInterval) &amp;&amp; pollInterval > 0) {
+          resources[name] = { handler: cleanBody, pollInterval };
+        } else {
+          resources[name] = cleanBody;
+        }
+      }
     }
 
-    /**
-     * Coerces a string value to its proper JavaScript type.
-     * @param {string} val - The raw string value.
-     * @returns {any} The coerced value.
-     * @private
-     */
-    #coerceValue(val) {
-        const trimmed = val.trim();
-        if (trimmed === 'true') return true;
-        if (trimmed === 'false') return false;
-        if (trimmed === 'null') return null;
-        if (trimmed !== '' &amp;&amp; !isNaN(trimmed)) return Number(trimmed);
-        
-        try {
-            return JSON.parse(val);
-        } catch (e) {
-            return val;
+    // 2. Self-closing syntax: &lt;resource name="xxx" handler="..." pollInterval="5000" />
+    const selfClosingRegex = /&lt;resource\s+([\s\S]*?)\s*\/>/g;
+    let sm;
+    while ((sm = selfClosingRegex.exec(content)) !== null) {
+      const attrRegex = /(?::)?(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let attrMatch;
+      let name = null;
+      let handler = null;
+      let pollInterval = null;
+      while ((attrMatch = attrRegex.exec(sm[1])) !== null) {
+        const k = attrMatch[1];
+        const val = attrMatch[2] !== undefined ? attrMatch[2] : attrMatch[3];
+        if (k === 'name') name = val;
+        if (k === 'handler') handler = val;
+        if (k === 'pollInterval') pollInterval = Number(val);
+      }
+      if (name &amp;&amp; handler !== null) {
+        if (pollInterval !== null &amp;&amp; !isNaN(pollInterval) &amp;&amp; pollInterval > 0) {
+          resources[name] = { handler, pollInterval };
+        } else {
+          resources[name] = handler;
         }
+      }
     }
 
-    /**
-     * Extracts computed property definitions from &lt;computed /> tags.
-     * @param {string} content - The component source code.
-     * @returns {Object} A map of computed property names to their expressions.
-     */
-    parseComputed(content) {
-        const computed = {};
-        const regex = /&lt;computed\s+([\s\S]*?)\s*\/>/g;
-        let m;
-        while ((m = regex.exec(content)) !== null) {
-            const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-            let attrMatch;
-            let name = null;
-            let value = null;
-            while ((attrMatch = attrRegex.exec(m[1])) !== null) {
-                const k = attrMatch[1];
-                const val = attrMatch[2] !== undefined ? attrMatch[2] : attrMatch[3];
-                if (k === 'name') name = val;
-                if (k === 'value') value = val;
-            }
-            if (name &amp;&amp; value !== null) {
-                computed[name] = value;
-            }
-        }
-        return computed;
-    }
+    return resources;
+  }
 
-    /**
-     * Extracts method definitions from &lt;action /> tags.
-     * @param {string} content - The component source code.
-     * @returns {Object} A map of method names to their source code.
-     */
-    parseMethods(content) {
-        const methods = {};
-        const actionRegex = /&lt;action\s+name\s*=\s*(?:"(\w+)"|'(\w+)')\s*>([\s\S]*?)&lt;\/action>/g;
-        let m;
-        while ((m = actionRegex.exec(content)) !== null) {
-            const name = m[1] || m[2];
-            methods[name] = m[3].trim();
-        }
-        return methods;
-    }
+  /**
+   * Parses dynamic attribute name binding expressions matching ^:\[(.*)\]$.
+   * @param {string} attrName - The attribute name (e.g. ":[dynamicAttr]").
+   * @param {string} [attrValue] - The attribute value expression.
+   * @returns {object|null} Metadata object containing expression details or null if not a dynamic attribute.
+   */
+  parseDynamicAttribute(attrName, attrValue = '') {
+    if (!attrName) return null;
+    const match = attrName.match(/^:\[(.*)\]$/);
+    if (!match) return null;
+    return {
+      isDynamicName: true,
+      nameExpr: match[1],
+      valueExpr: attrValue,
+    };
+  }
 }
 
-module.exports = ExpressionParser;
+export default ExpressionParser;
 </code></pre>
         </article>
     </section>
@@ -126,13 +250,13 @@ module.exports = ExpressionParser;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

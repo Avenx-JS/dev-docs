@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/core/reactive/watcher.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/core/reactive/watcher.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @file watcher.js
+ * @description General-purpose state watcher and reactivity dependency tracking for Avenx-JS.
+ */
+
+/**
+ * WeakMap tracking raw target to Map of keys to Set of active Watchers depending on them.
+ * @type {WeakMap&lt;object, Map&lt;string, Set&lt;AvenxWatcher>>>}
+ */
+export const depMap = new WeakMap();
+
+/**
+ * WeakMap tracking nested child targets to their parent relationship.
+ * @type {WeakMap&lt;object, {parentTarget: object, parentKey: string}>}
+ */
+export const parentMap = new WeakMap();
+
+/**
+ * The currently active watcher evaluating a reactive expression/function.
+ * @type {AvenxWatcher|null}
+ */
+export let activeWatcher = null;
+
+/**
+ * Call stack of active watchers.
+ * @type {AvenxWatcher[]}
+ */
+const watcherStack = [];
+
+/**
+ * Pushes a watcher onto the active evaluation context stack.
+ * @param {AvenxWatcher} watcher - The watcher instance to run.
+ */
+export function pushWatcher(watcher) {
+  watcherStack.push(activeWatcher);
+  activeWatcher = watcher;
+}
+
+/**
+ * Pops the active watcher context from the stack.
+ */
+export function popWatcher() {
+  activeWatcher = watcherStack.pop();
+}
+
+let debugReactivity = false;
+
+/**
+ * Programmatically enables or disables debug reactivity logging.
+ * @param {boolean} enabled
+ */
+export function setDebugReactivity(enabled) {
+  debugReactivity = Boolean(enabled);
+}
+
+/**
+ * Returns whether debug reactivity logging is currently enabled.
+ * @returns {boolean}
+ */
+export function isDebugReactivityEnabled() {
+  if (typeof globalThis !== 'undefined' &amp;&amp; typeof globalThis.__avenx_debug_reactivity__ === 'boolean') {
+    return globalThis.__avenx_debug_reactivity__;
+  }
+  return debugReactivity;
+}
+
+/**
+ * Formats a value for debug logging output.
+ * @param {any} val
+ * @returns {string}
+ */
+export function formatValue(val) {
+  if (typeof val === 'string') {
+    return `"${val}"`;
+  }
+  if (val === undefined) {
+    return 'undefined';
+  }
+  if (val === null) {
+    return 'null';
+  }
+  if (typeof val === 'symbol') {
+    return val.toString();
+  }
+  if (typeof val === 'object') {
+    try {
+      return JSON.stringify(val);
+    } catch {
+      return String(val);
+    }
+  }
+  return String(val);
+}
+
+/**
+ * Constructs the full property path from a target object and key using parentMap.
+ * @param {object} target
+ * @param {string|symbol} key
+ * @returns {string}
+ */
+export function getPropertyPath(target, key) {
+  const parts = [];
+  if (key !== undefined &amp;&amp; key !== null) {
+    parts.unshift(String(key));
+  }
+  let current = target;
+  while (current) {
+    const relation = parentMap.get(current);
+    if (!relation) break;
+    parts.unshift(String(relation.parentKey));
+    current = relation.parentTarget;
+  }
+  return parts.join('.');
+}
+
+/**
+ * Tracks a property access on a target, establishing a dependency relationship.
+ * @param {object} target - The raw reactive target object.
+ * @param {string} key - The property key accessed.
+ */
+export function track(target, key) {
+  if (activeWatcher) {
+    let keysMap = depMap.get(target);
+    if (!keysMap) {
+      keysMap = new Map();
+      depMap.set(target, keysMap);
+    }
+    let watchers = keysMap.get(key);
+    if (!watchers) {
+      watchers = new Set();
+      keysMap.set(key, watchers);
+    }
+    watchers.add(activeWatcher);
+    activeWatcher.addDep(target, key, watchers);
+
+    if (isDebugReactivityEnabled()) {
+      const propPath = getPropertyPath(target, key);
+      const watcherName = activeWatcher.name || (activeWatcher.options &amp;&amp; activeWatcher.options.name) || 'anonymous';
+      console.log(`[Avenx Debug] Tracked property "${propPath}" by Watcher "${watcherName}"`);
+    }
+  }
+}
+
+let triggerDepth = 0;
+const triggeredWatchers = new Set();
+
+/**
+ * Triggers all watchers registered to a mutated property, and propagates to parent nodes.
+ * @param {object} target - The raw target where mutation occurred.
+ * @param {string} key - The property key mutated.
+ * @param {any} [oldValue] - Previous value before mutation.
+ * @param {any} [newValue] - New value after mutation.
+ */
+export function trigger(target, key, oldValue, newValue) {
+  if (triggerDepth === 0) {
+    triggeredWatchers.clear();
+  }
+  triggerDepth++;
+
+  try {
+    const keys = Array.isArray(key) ? key : [key];
+
+    if (isDebugReactivityEnabled()) {
+      for (const k of keys) {
+        if (typeof k !== 'symbol') {
+          const propPath = getPropertyPath(target, k);
+          const oldFormatted = formatValue(oldValue);
+          const newFormatted = formatValue(newValue);
+          console.log(`[Avenx Debug] Triggered property "${propPath}" (old: ${oldFormatted}, new: ${newFormatted}) -> scheduling update`);
+        }
+      }
+    }
+
+    const keysMap = depMap.get(target);
+    if (keysMap) {
+      for (const k of keys) {
+        const watchers = keysMap.get(k);
+        if (watchers) {
+          // Copy to prevent concurrent modification issues during execution
+          const toRun = new Set(watchers);
+          for (const watcher of toRun) {
+            if (!triggeredWatchers.has(watcher)) {
+              triggeredWatchers.add(watcher);
+              if (typeof watcher.update === 'function') {
+                watcher.update();
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Propagate triggering to parents in case target is a nested object
+    const parentRelation = parentMap.get(target);
+    if (parentRelation) {
+      const { parentTarget, parentKey } = parentRelation;
+      trigger(parentTarget, parentKey, oldValue, newValue);
+    }
+  } finally {
+    triggerDepth--;
+  }
+}
+
+/**
+ * Recursively traverses a reactive value to register deep dependencies.
+ * @param {any} value
+ * @param {Set&lt;any>} [seen]
+ */
+function traverse(value, seen = new Set()) {
+  if (value === null || typeof value !== 'object') {
+    return;
+  }
+  if (seen.has(value)) {
+    return;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (let i = 0; i &lt; value.length; i++) {
+      traverse(value[i], seen);
+    }
+  } else {
+    for (const key of Object.keys(value)) {
+      traverse(value[key], seen);
+    }
+  }
+}
+
+/**
+ * AvenxWatcher handles dependency tracking, caching, lazy/immediate callbacks,
+ * and lifecycle cleanup for reactive expressions.
+ */
+export class AvenxWatcher {
+  #isPaused = false;
+
+  /**
+   * @param {function(): any} getter - The reactive evaluation function.
+   * @param {function(any, any): void|null} [callback] - Callback triggered when evaluated value changes.
+   * @param {object} [options] - Configuration options.
+   * @param {boolean} [options.immediate] - Run the callback immediately with initial value.
+   * @param {boolean} [options.lazy] - Postpone the initial evaluation until first accessed.
+   */
+  constructor(getter, callback = null, options = {}) {
+    /** @type {function(): any} */
+    this.getter = getter;
+    /** @type {function(any, any): void|null} */
+    this.callback = callback;
+    /** @type {object} */
+    this.options = options;
+    /** @type {string} */
+    this.name = (options &amp;&amp; (options.name || options.id)) || (getter &amp;&amp; getter.name) || 'anonymous';
+    /** @type {Set&lt;{target: object, key: string, watchersSet: Set&lt;AvenxWatcher>}>} */
+    this.deps = new Set();
+    /** @type {boolean} */
+    this.dirty = true;
+    /** @type {any} */
+    this.value = undefined;
+
+    /** @type {any} */
+    this.debounceTimer = null;
+    /** @type {any} */
+    this.throttleTimer = null;
+    /** @type {number} */
+    this.lastExecTime = 0;
+    /** @type {any} */
+    this.pendingNewValue = undefined;
+    /** @type {any} */
+    this.pendingOldValue = undefined;
+
+    if (!options.lazy) {
+      this.value = this.get();
+      this.dirty = false;
+    }
+
+    if (options.immediate &amp;&amp; this.callback) {
+      this.callback(this.value, undefined);
+    }
+  }
+
+  /**
+   * Pauses watcher execution.
+   */
+  pause() {
+    this.#isPaused = true;
+  }
+
+  /**
+   * Resumes watcher execution.
+   */
+  resume() {
+    this.#isPaused = false;
+  }
+
+  /**
+   * Evaluates the getter function inside the watcher context to track reactive dependencies.
+   * @returns {any}
+   */
+  get() {
+    pushWatcher(this);
+    const oldDeps = this.deps;
+    this.deps = new Set();
+
+    try {
+      const value = this.getter();
+      if (this.options.deep) {
+        traverse(value);
+      }
+      this.cleanupDeps(oldDeps);
+      return value;
+    } catch (err) {
+      this.deps = oldDeps;
+      throw err;
+    } finally {
+      popWatcher();
+    }
+  }
+
+  /**
+   * Evaluates a lazy computed watcher if it is dirty.
+   * @returns {any}
+   */
+  evaluate() {
+    if (this.dirty) {
+      this.value = this.get();
+      this.dirty = false;
+    }
+    return this.value;
+  }
+
+  /**
+   * Registers a target property dependency on this watcher.
+   * @param {object} target - Reactive object target.
+   * @param {string} key - Property key.
+   * @param {Set&lt;AvenxWatcher>} watchersSet - Set mapping to this dependency.
+   */
+  addDep(target, key, watchersSet) {
+    for (const dep of this.deps) {
+      if (dep.watchersSet === watchersSet) {
+        return;
+      }
+    }
+    this.deps.add({ target, key, watchersSet });
+  }
+
+  /**
+   * Compares active dependencies against old dependencies and unsubscribes from stale dependencies.
+   * @param {Set&lt;{target: object, key: string, watchersSet: Set&lt;AvenxWatcher>}>} oldDeps
+   */
+  cleanupDeps(oldDeps) {
+    const activeWatcherSets = new Set();
+    for (const dep of this.deps) {
+      activeWatcherSets.add(dep.watchersSet);
+    }
+    for (const oldDep of oldDeps) {
+      if (!activeWatcherSets.has(oldDep.watchersSet)) {
+        oldDep.watchersSet.delete(this);
+      }
+    }
+  }
+
+  /**
+   * Executes the watcher callback, applying debounce or throttle timing if configured.
+   * @param {any} newValue
+   * @param {any} oldValue
+   */
+  run(newValue, oldValue) {
+    if (!this.callback) return;
+
+    if (typeof this.options.debounce === 'number' &amp;&amp; this.options.debounce > 0) {
+      if (this.debounceTimer) {
+        clearTimeout(this.debounceTimer);
+      }
+      if (this.pendingOldValue === undefined) {
+        this.pendingOldValue = oldValue;
+      }
+      this.pendingNewValue = newValue;
+
+      this.debounceTimer = setTimeout(() => {
+        const toNew = this.pendingNewValue;
+        const toOld = this.pendingOldValue;
+        this.pendingNewValue = undefined;
+        this.pendingOldValue = undefined;
+        this.debounceTimer = null;
+        if (this.callback) {
+          this.callback(toNew, toOld);
+        }
+      }, this.options.debounce);
+      return;
+    }
+
+    if (typeof this.options.throttle === 'number' &amp;&amp; this.options.throttle > 0) {
+      const now = Date.now();
+      const remaining = this.options.throttle - (now - (this.lastExecTime || 0));
+
+      if (this.pendingOldValue === undefined) {
+        this.pendingOldValue = oldValue;
+      }
+      this.pendingNewValue = newValue;
+
+      if (remaining &lt;= 0 || remaining > this.options.throttle) {
+        if (this.throttleTimer) {
+          clearTimeout(this.throttleTimer);
+          this.throttleTimer = null;
+        }
+        this.lastExecTime = now;
+        const toNew = this.pendingNewValue;
+        const toOld = this.pendingOldValue;
+        this.pendingNewValue = undefined;
+        this.pendingOldValue = undefined;
+        this.callback(toNew, toOld);
+      } else if (!this.throttleTimer) {
+        this.throttleTimer = setTimeout(() => {
+          this.lastExecTime = Date.now();
+          this.throttleTimer = null;
+          const toNew = this.pendingNewValue;
+          const toOld = this.pendingOldValue;
+          this.pendingNewValue = undefined;
+          this.pendingOldValue = undefined;
+          if (this.callback) {
+            this.callback(toNew, toOld);
+          }
+        }, remaining);
+      }
+      return;
+    }
+
+    this.callback(newValue, oldValue);
+  }
+
+  /**
+   * Triggers re-evaluation when a tracked dependency changes, firing the callback if needed.
+   */
+  update() {
+    if (this.#isPaused) return;
+    if (this.options.lazy) {
+      this.dirty = true;
+      if (this.callback) {
+        this.run(this.value, this.value);
+      }
+    } else {
+      const oldValue = this.value;
+      const newValue = this.get();
+      if (newValue !== oldValue || (newValue &amp;&amp; typeof newValue === 'object')) {
+        this.value = newValue;
+        if (this.callback) {
+          this.run(newValue, oldValue);
+        }
+      }
+    }
+  }
+
+  /**
+   * Cleans up all registered dependencies of this watcher to prevent memory leaks.
+   */
+  teardown() {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    if (this.throttleTimer) {
+      clearTimeout(this.throttleTimer);
+      this.throttleTimer = null;
+    }
+    this.pendingNewValue = undefined;
+    this.pendingOldValue = undefined;
+
+    for (const dep of this.deps) {
+      dep.watchersSet.delete(this);
+    }
+    this.deps.clear();
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

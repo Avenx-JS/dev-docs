@@ -26,154 +26,1207 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>/**
+            <pre class="prettyprint source linenums"><code>import { AvenxErrorCodes, formatMessage } from '../runtime/AvenxError.js';
+import { logger } from '../runtime/AvenxLogger.js';
+import { HtmlEscaper, SafeHtml } from '../security/escapeHtml.js';
+import { isBooleanAttribute } from './constants.js';
+import { profile, getComponentProfilingInfo } from '../utils/profiler.js';
+
+const escaper = new HtmlEscaper();
+
+/**
+ * Compares two class attribute strings as unordered token sets, ignoring extra
+ * whitespace and token order, so redundant DOM mutations are skipped when the
+ * effective class list is unchanged.
+ * @param {string|null} a
+ * @param {string|null} b
+ * @returns {boolean}
+ */
+function classTokensEqual(a, b) {
+  const tokensOf = (value) => {
+    if (value == null) return [];
+    return Array.from(new Set(String(value).trim().split(/\s+/).filter(Boolean))).sort();
+  };
+  const aTokens = tokensOf(a);
+  const bTokens = tokensOf(b);
+  if (aTokens.length !== bTokens.length) {
+    return false;
+  }
+  return aTokens.every((token, index) => token === bTokens[index]);
+}
+
+/**
+ * Helper to compute transition/animation duration from element computed styles.
+ * @param {Element} el
+ * @returns {number} duration in ms
+ */
+function getTransitionDuration(el) {
+  if (!el || typeof window === 'undefined' || !window.getComputedStyle) return 0;
+  const styles = window.getComputedStyle(el);
+  const transitionDelay = styles.transitionDelay || '';
+  const transitionDuration = styles.transitionDuration || '';
+  const animationDelay = styles.animationDelay || '';
+  const animationDuration = styles.animationDuration || '';
+
+  const parseTime = (timeStr) => {
+    if (!timeStr) return 0;
+    const times = timeStr.split(',').map((t) => {
+      const match = t.trim().match(/^([0-9.]+)(s|ms)$/i);
+      if (!match) return 0;
+      const val = parseFloat(match[1]);
+      const unit = match[2].toLowerCase();
+      return unit === 'ms' ? val : val * 1000;
+    });
+    return Math.max(...times, 0);
+  };
+
+  const tDuration = parseTime(transitionDuration);
+  const tDelay = parseTime(transitionDelay);
+  const aDuration = parseTime(animationDuration);
+  const aDelay = parseTime(animationDelay);
+
+  return Math.max(tDuration + tDelay, aDuration + aDelay);
+}
+
+/**
  * Handles patching the DOM with new HTML content using a simple diffing algorithm.
  * This approach is more efficient than innerHTML as it preserves existing DOM nodes.
  */
 export class DomPatcher {
-    /**
-     * Patches the target element with the provided HTML.
-     * @param {Element} target - The element to patch.
-     * @param {string} html - The new HTML content.
-     */
-    patch(target, html) {
-        const parser = new DOMParser();
-        const newDoc = parser.parseFromString(html, 'text/html');
-        const newRoot = newDoc.body;
+  /**
+   * Patches the target element with the provided HTML.
+   * @param {Element} target - The element to patch.
+   * @param {string} html - The new HTML content.
+   * @param {function(string): any} [resolveExpression] - Function to evaluate expressions.
+   * @param {object} [app] - The application context.
+   */
+  patch(target, html, resolveExpression, app) {
+    const { enableProfiling, componentName } = getComponentProfilingInfo(target);
+    profile(enableProfiling, componentName, 'patch', () => {
+      const parser = new DOMParser();
+      const newDoc = parser.parseFromString(html, 'text/html');
 
-        this.#patchNode(target, newRoot, true, true);
+      const parserError =
+        newDoc &amp;&amp; typeof newDoc.querySelector === 'function' ? newDoc.querySelector('parsererror') : null;
+      if (parserError) {
+        const errorMsg = parserError.textContent ? parserError.textContent.trim() : 'Unknown parsing error';
+        logger.warn(formatMessage(AvenxErrorCodes.DOM_PARSING_FAILED, errorMsg, html));
+        return;
+      }
+
+      const newRoot = newDoc.body;
+      this.flattenTransitionTags(newRoot);
+
+      const prevSession = this.sessionElements;
+      const prevRoot = this.patchRoot;
+      this.sessionElements = new Set();
+      this.patchRoot = target;
+
+      try {
+        this.#patchNode(target, newRoot, true, true, resolveExpression, app);
+        this.flushLifecycleHooks(app);
+      } finally {
+        this.sessionElements = prevSession;
+        this.patchRoot = prevRoot;
+      }
+    });
+  }
+
+  /**
+   * Patches an existing element with a new element structure in-place.
+   * @param {Element} oldElement - The existing element.
+   * @param {Element} newElement - The new element structure.
+   * @param {function(string): any} [resolveExpression] - Function to evaluate expressions.
+   * @param {object} [app] - The application context.
+   */
+  patchElement(oldElement, newElement, resolveExpression, app) {
+    const { enableProfiling, componentName } = getComponentProfilingInfo(oldElement);
+    profile(enableProfiling, componentName, 'patch', () => {
+      this.flattenTransitionTags(newElement);
+
+      const prevSession = this.sessionElements;
+      const prevRoot = this.patchRoot;
+      this.sessionElements = new Set();
+      this.patchRoot = oldElement;
+
+      try {
+        this.#patchNode(oldElement, newElement, false, true, resolveExpression, app);
+        this.flushLifecycleHooks(app);
+      } finally {
+        this.sessionElements = prevSession;
+        this.patchRoot = prevRoot;
+      }
+    });
+  }
+
+  /**
+   * Recursively diffs and patches two nodes.
+   * @param {Node} oldNode - The existing DOM node.
+   * @param {Node} newNode - The new node structure.
+   * @param {boolean} [isBodyWrapper] - Whether the new node is a temporary body wrapper.
+   * @param {boolean} [isPatchRoot] - Whether this is the root node of the patching operation.
+   * @param {function(string): any} [resolveExpression] - Function to evaluate expressions.
+   * @param {object} [app] - The application context.
+   * @private
+   */
+  #patchNode(oldNode, newNode, isBodyWrapper = false, isPatchRoot = false, resolveExpression, app) {
+    if (
+      !isPatchRoot &amp;&amp;
+      oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp;
+      oldNode.nodeName === 'SLOT' &amp;&amp;
+      oldNode.hasAttribute('data-avenx-transcluded')
+    ) {
+      if (newNode.nodeType === Node.ELEMENT_NODE) {
+        this.#patchAttributes(oldNode, newNode);
+        oldNode.setAttribute('data-avenx-transcluded', 'true');
+        if (resolveExpression) {
+          this.#applyDirectives(oldNode, resolveExpression, app);
+        }
+      }
+      return;
     }
 
-    /**
-     * Patches an existing element with a new element structure in-place.
-     * @param {Element} oldElement - The existing element.
-     * @param {Element} newElement - The new element structure.
-     */
-    patchElement(oldElement, newElement) {
-        this.#patchNode(oldElement, newElement, false, true);
+    if (
+      !isPatchRoot &amp;&amp;
+      oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp;
+      (oldNode.hasAttribute('data-avenx-comp') || oldNode.hasAttribute('data-avenx-comp-dynamic'))
+    ) {
+      if (newNode.nodeType === Node.ELEMENT_NODE) {
+        this.#patchAttributes(oldNode, newNode);
+        const compInstance = oldNode.__avenx_comp_instance;
+        if (compInstance &amp;&amp; typeof compInstance.__updateTranscludedContent === 'function') {
+          compInstance.__updateTranscludedContent(newNode.childNodes);
+        }
+        if (resolveExpression) {
+          this.#applyDirectives(oldNode, resolveExpression, app);
+        }
+      }
+      return;
     }
 
-    /**
-     * Recursively diffs and patches two nodes.
-     * @param {Node} oldNode - The existing DOM node.
-     * @param {Node} newNode - The new node structure.
-     * @param {boolean} [isBodyWrapper=false] - Whether the new node is a temporary body wrapper.
-     * @param {boolean} [isPatchRoot=false] - Whether this is the root node of the patching operation.
-     * @private
-     */
-    #patchNode(oldNode, newNode, isBodyWrapper = false, isPatchRoot = false) {
-        if (!isPatchRoot &amp;&amp; oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp; oldNode.nodeName === 'SLOT' &amp;&amp; oldNode.hasAttribute('data-avenx-transcluded')) {
-            if (newNode.nodeType === Node.ELEMENT_NODE) {
-                this.#patchAttributes(oldNode, newNode);
-                oldNode.setAttribute('data-avenx-transcluded', 'true');
-            }
-            return;
-        }
+    if (
+      !isPatchRoot &amp;&amp;
+      oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp;
+      (oldNode.tagName.toLowerCase() === 'template' || oldNode.tagName.toLowerCase() === '@for')
+    ) {
+      if (newNode.nodeType === Node.ELEMENT_NODE) {
+        this.#patchAttributes(oldNode, newNode);
+      }
+      return;
+    }
 
-        if (!isPatchRoot &amp;&amp; oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp; oldNode.hasAttribute('data-avenx-comp')) {
-            if (newNode.nodeType === Node.ELEMENT_NODE) {
-                this.#patchAttributes(oldNode, newNode);
-                const compInstance = oldNode.__avenx_comp_instance;
-                if (compInstance &amp;&amp; typeof compInstance.__updateTranscludedContent === 'function') {
-                    compInstance.__updateTranscludedContent(newNode.childNodes);
+    if (!isPatchRoot &amp;&amp; oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp; oldNode.hasAttribute('data-ax-static')) {
+      return;
+    }
+
+    // 1. Update attributes if it's an element (skip if it is the temporary body wrapper)
+    let skipChildren = false;
+    if (!isBodyWrapper &amp;&amp; oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp; newNode.nodeType === Node.ELEMENT_NODE) {
+      this.#patchAttributes(oldNode, newNode);
+      if (resolveExpression) {
+        skipChildren = this.#applyDirectives(oldNode, resolveExpression, app);
+      }
+    }
+
+    if (skipChildren) {
+      return;
+    }
+
+    // 2. Diff children
+    const oldChildrenRaw = Array.from(oldNode.childNodes).filter((child) => !child._isLeaving);
+    const newChildrenRaw = Array.from(newNode.childNodes);
+
+    const oldChildren = [];
+    for (const child of oldChildrenRaw) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const last = oldChildren[oldChildren.length - 1];
+        if (last &amp;&amp; last.nodeType === Node.TEXT_NODE) {
+          last.textContent += child.textContent;
+          if (child.parentNode) {
+            child.parentNode.removeChild(child);
+          }
+        } else {
+          oldChildren.push(child);
+        }
+      } else {
+        oldChildren.push(child);
+      }
+    }
+
+    const newChildren = [];
+    for (const child of newChildrenRaw) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const last = newChildren[newChildren.length - 1];
+        if (last &amp;&amp; last.nodeType === Node.TEXT_NODE) {
+          last.textContent += child.textContent;
+          if (child.parentNode) {
+            child.parentNode.removeChild(child);
+          }
+        } else {
+          newChildren.push(child);
+        }
+      } else {
+        newChildren.push(child);
+      }
+    }
+
+    let oldIndex = 0;
+    let newIndex = 0;
+
+    while (newIndex &lt; newChildren.length) {
+      const newChild = newChildren[newIndex];
+      let oldChild = oldChildren[oldIndex];
+
+      // Skip items managed by ListManager in the old DOM
+      while (oldChild &amp;&amp; oldChild.nodeType === Node.ELEMENT_NODE &amp;&amp; oldChild.hasAttribute('data-ax-list-item')) {
+        oldIndex++;
+        oldChild = oldChildren[oldIndex];
+      }
+
+      if (!oldChild) {
+        // Add remaining new children
+        const isParentSvg =
+          oldNode &amp;&amp;
+          oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp;
+          (oldNode.namespaceURI === 'http://www.w3.org/2000/svg' || oldNode.tagName.toLowerCase() === 'svg');
+        const prepared = this.#prepareNode(newChild, isParentSvg, resolveExpression, app);
+        oldNode.appendChild(prepared);
+        this.triggerEnter(prepared, resolveExpression);
+      } else if (this.#isSameNodeType(oldChild, newChild)) {
+        // Nodes are same type, patch them
+        if (oldChild.nodeType === Node.TEXT_NODE) {
+          if (oldChild.textContent !== newChild.textContent) {
+            oldChild.textContent = newChild.textContent;
+          }
+        } else {
+          this.#patchNode(oldChild, newChild, false, false, resolveExpression, app);
+        }
+        oldIndex++;
+      } else {
+        // Nodes are different, replace
+        const isParentSvg =
+          oldNode &amp;&amp;
+          oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp;
+          (oldNode.namespaceURI === 'http://www.w3.org/2000/svg' || oldNode.tagName.toLowerCase() === 'svg');
+        const prepared = this.#prepareNode(newChild, isParentSvg, resolveExpression, app);
+
+        const transitionName = this.getTransitionName(oldChild, resolveExpression);
+        if (transitionName) {
+          oldNode.insertBefore(prepared, oldChild);
+          this.triggerLeave(oldChild, resolveExpression, () => {
+            if (oldChild.parentNode === oldNode) {
+              oldNode.removeChild(oldChild);
+            }
+          }, app);
+        } else {
+          this.triggerUnmounted(oldChild, app);
+          oldNode.replaceChild(prepared, oldChild);
+        }
+        this.triggerEnter(prepared, resolveExpression);
+        oldIndex++;
+      }
+      newIndex++;
+    }
+
+    // Re-sync select value after dynamic options are patched.
+    if (
+      oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp;
+      oldNode.nodeName === 'SELECT' &amp;&amp;
+      newNode.nodeType === Node.ELEMENT_NODE
+    ) {
+      const valueAttr = newNode.getAttribute('value');
+
+      if (valueAttr !== null &amp;&amp; oldNode.value !== valueAttr) {
+        oldNode.value = valueAttr;
+      }
+    }
+
+    // Remove remaining old children (that are not managed by ListManager)
+    while (oldIndex &lt; oldChildren.length) {
+      const oldChild = oldChildren[oldIndex];
+      if (!(oldChild.nodeType === Node.ELEMENT_NODE &amp;&amp; oldChild.hasAttribute('data-ax-list-item'))) {
+        this.triggerLeave(oldChild, resolveExpression, () => {
+          if (oldChild.parentNode === oldNode) {
+            oldNode.removeChild(oldChild);
+          }
+        }, app);
+      }
+      oldIndex++;
+    }
+  }
+
+  /**
+   * Checks if two nodes are of the same type and name.
+   * @param {Node} nodeA
+   * @param {Node} nodeB
+   * @private
+   */
+  #isSameNodeType(nodeA, nodeB) {
+    return nodeA.nodeType === nodeB.nodeType &amp;&amp; nodeA.nodeName === nodeB.nodeName;
+  }
+
+  /**
+   * Syncs attributes from newNode to oldNode.
+   * @param {Element} oldNode
+   * @param {Element} newNode
+   * @private
+   */
+  #patchAttributes(oldNode, newNode) {
+    const oldAttrs = oldNode.attributes;
+    const newAttrs = newNode.attributes;
+
+    // Track dynamic attribute names for clean attribute removal when dynamic attribute names change
+    const newDynAttrStr = newNode.getAttribute ? newNode.getAttribute('data-ax-dyn-attrs') : null;
+    const newDynAttrs = newDynAttrStr !== null ? newDynAttrStr.split(',').filter(Boolean) : null;
+
+    let prevDynAttrs = oldNode.__avenxDynAttrs || [];
+    if (oldNode.getAttribute &amp;&amp; oldNode.hasAttribute('data-ax-dyn-attrs')) {
+      const attrVal = oldNode.getAttribute('data-ax-dyn-attrs');
+      const fromAttr = attrVal ? attrVal.split(',').filter(Boolean) : [];
+      prevDynAttrs = Array.from(new Set([...prevDynAttrs, ...fromAttr]));
+    }
+
+    if (newDynAttrs !== null) {
+      for (const oldDynName of prevDynAttrs) {
+        if (!newDynAttrs.includes(oldDynName)) {
+          if (oldNode.hasAttribute(oldDynName)) {
+            oldNode.removeAttribute(oldDynName);
+            if (isBooleanAttribute(oldDynName)) {
+              oldNode[oldDynName] = false;
+            }
+          }
+        }
+      }
+      oldNode.__avenxDynAttrs = newDynAttrs;
+    }
+
+    // Remove old attributes that are gone
+    for (let i = oldAttrs.length - 1; i >= 0; i--) {
+      const attr = oldAttrs[i];
+      if (!newNode.hasAttribute(attr.name)) {
+        oldNode.removeAttribute(attr.name);
+        if (isBooleanAttribute(attr.name)) {
+          oldNode[attr.name] = false;
+        }
+        if (attr.name === 'value' &amp;&amp; ['INPUT', 'TEXTAREA', 'SELECT'].includes(oldNode.nodeName)) {
+          oldNode.value = '';
+        }
+      }
+    }
+
+    // Add or update attributes
+    for (let i = 0; i &lt; newAttrs.length; i++) {
+      const attr = newAttrs[i];
+      const isBoolean = isBooleanAttribute(attr.name);
+
+      if (isBoolean) {
+        const isFalsy = attr.value === 'false' || attr.value === null || attr.value === undefined;
+        if (isFalsy) {
+          if (oldNode.hasAttribute(attr.name)) {
+            oldNode.removeAttribute(attr.name);
+          }
+          oldNode[attr.name] = false;
+        } else {
+          if (oldNode.getAttribute(attr.name) !== attr.value) {
+            oldNode.setAttribute(attr.name, attr.value);
+          }
+          oldNode[attr.name] = true;
+        }
+      } else {
+        const oldValue = oldNode.getAttribute(attr.name);
+        const shouldUpdate =
+          attr.name === 'class' ? !classTokensEqual(oldValue, attr.value) : oldValue !== attr.value;
+        if (shouldUpdate) {
+          oldNode.setAttribute(attr.name, attr.value);
+        }
+        if (attr.name === 'value' &amp;&amp; ['INPUT', 'TEXTAREA', 'SELECT'].includes(oldNode.nodeName)) {
+          if (oldNode.value !== attr.value) {
+            oldNode.value = attr.value;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Cleans an element by removing boolean attributes that evaluate to false.
+   * @param {Element} element - The element to clean.
+   * @returns {Element} The cleaned element.
+   */
+  cleanElement(element) {
+    if (element &amp;&amp; element.nodeType === Node.ELEMENT_NODE) {
+      this.flattenTransitionTags(element);
+      this.#cleanBooleanAttributes(element);
+    }
+    return element;
+  }
+
+  /**
+   * Recursively finds and cleans boolean attributes that evaluate to false in a subtree.
+   * @param {Element} element - The root element to clean.
+   * @private
+   */
+  #cleanBooleanAttributes(element) {
+    const elements = [element, ...element.querySelectorAll('*')];
+    for (const el of elements) {
+      const attrs = Array.from(el.attributes);
+      for (const attr of attrs) {
+        if (isBooleanAttribute(attr.name)) {
+          const isFalsy = attr.value === 'false' || attr.value === null || attr.value === undefined;
+          if (isFalsy) {
+            el.removeAttribute(attr.name);
+            el[attr.name] = false;
+          } else {
+            el[attr.name] = true;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Cleans boolean attributes of a single element in-place.
+   * @param {Element} el
+   * @private
+   */
+  #cleanBooleanAttributesForNode(el) {
+    const attrs = Array.from(el.attributes);
+    for (const attr of attrs) {
+      if (isBooleanAttribute(attr.name)) {
+        const isFalsy = attr.value === 'false' || attr.value === null || attr.value === undefined;
+        if (isFalsy) {
+          el.removeAttribute(attr.name);
+          el[attr.name] = false;
+        } else {
+          el[attr.name] = true;
+        }
+      }
+    }
+  }
+
+  /**
+   * Prepares a node for insertion into the DOM by cleaning its boolean attributes
+   * and ensuring correct namespaces for SVG elements.
+   * If a node already has the correct namespace, it is prepared in-place without cloning.
+   * @param {Node} node - The node to prepare.
+   * @param {boolean} [isSvg] - Whether the node is within an SVG context.
+   * @param {function(string): any} [resolveExpression] - Function to evaluate expressions.
+   * @param {object} [app] - The application context.
+   * @returns {Node} The prepared node.
+   * @private
+   */
+  #prepareNode(node, isSvg = false, resolveExpression, app) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName.toLowerCase();
+      if (tagName === 'template' || tagName === '@for') {
+        return node;
+      }
+      const currentIsSvg = isSvg || tagName === 'svg';
+
+      let skipChildren = false;
+      if (resolveExpression) {
+        skipChildren = this.#applyDirectives(node, resolveExpression, app);
+      }
+
+      if (currentIsSvg) {
+        if (node.namespaceURI === 'http://www.w3.org/2000/svg') {
+          this.#cleanBooleanAttributesForNode(node);
+          if (!skipChildren) {
+            const children = Array.from(node.childNodes);
+            for (const child of children) {
+              this.#prepareNode(child, currentIsSvg, resolveExpression, app);
+            }
+          }
+          return node;
+        } else {
+          const svgElement = document.createElementNS('http://www.w3.org/2000/svg', tagName);
+          const attrs = node.attributes;
+          if (attrs) {
+            for (let i = 0; i &lt; attrs.length; i++) {
+              const attr = attrs[i];
+              const isBoolean = isBooleanAttribute(attr.name);
+              const isFalsy = attr.value === 'false' || attr.value === null || attr.value === undefined;
+              if (isBoolean &amp;&amp; isFalsy) {
+                svgElement[attr.name] = false;
+              } else {
+                svgElement.setAttribute(attr.name, attr.value);
+                if (isBoolean) {
+                  svgElement[attr.name] = true;
                 }
+              }
             }
-            return;
+          }
+          if (resolveExpression) {
+            this.#applyDirectives(svgElement, resolveExpression, app);
+          }
+          if (!skipChildren) {
+            const children = Array.from(node.childNodes);
+            for (const child of children) {
+              svgElement.appendChild(this.#prepareNode(child, currentIsSvg, resolveExpression, app));
+            }
+          }
+          return svgElement;
+        }
+      } else {
+        this.#cleanBooleanAttributesForNode(node);
+        if (!skipChildren) {
+          const children = Array.from(node.childNodes);
+          for (const child of children) {
+            this.#prepareNode(child, false, resolveExpression, app);
+          }
+        }
+        return node;
+      }
+    }
+    return node;
+  }
+
+  /**
+   * Resolves the slot scope for an element by traversing up the DOM tree.
+   * @param {Element} el
+   * @returns {object|null}
+   * @private
+   */
+  #getSlotScope(el) {
+    let current = el;
+    while (current) {
+      if (current.__avenx_slot_scope) {
+        return current.__avenx_slot_scope;
+      }
+      current = current.parentNode;
+    }
+    return null;
+  }
+
+  /**
+   * Evaluates and applies directives on a single element.
+   * @param {Element} el - The element to evaluate directives on.
+   * @param {function(string): any} resolveExpression - The expression evaluator.
+   * @param {object} [app] - The application context.
+   * @returns {boolean} Whether children evaluation/diffing should be skipped.
+   * @private
+   */
+  #applyDirectives(el, resolveExpression, app) {
+    if (!resolveExpression || el.nodeType !== Node.ELEMENT_NODE) {
+      return false;
+    }
+    const slotScope = this.#getSlotScope(el);
+    const localResolve = slotScope ? (expr) => resolveExpression(expr, slotScope) : resolveExpression;
+    let skipChildren = false;
+
+    // 1. data-ax-html
+    if (el.hasAttribute('data-ax-html')) {
+      const expr = el.getAttribute('data-ax-html');
+      try {
+        const value = localResolve(expr);
+        let resolvedHtml = '';
+        if (value instanceof SafeHtml) {
+          resolvedHtml = value.toString();
+        } else if (value == null) {
+          resolvedHtml = '';
+        } else {
+          resolvedHtml = escaper.escape(value);
+        }
+        if (el.innerHTML !== resolvedHtml) {
+          el.innerHTML = resolvedHtml;
+        }
+        skipChildren = true;
+      } catch (err) {
+        logger.warn(
+          formatMessage(AvenxErrorCodes.DIRECTIVE_HTML_EVALUATION_FAILED, expr, err.message || err)
+        );
+      }
+    }
+
+    // 2. data-ax-show
+    if (el.hasAttribute('data-ax-show')) {
+      const expr = el.getAttribute('data-ax-show');
+      try {
+        const value = !!localResolve(expr);
+        const hasOriginal = typeof el.__originalDisplay !== 'undefined';
+        if (!hasOriginal) {
+          el.__originalDisplay = el.style.display || '';
         }
 
-        // 1. Update attributes if it's an element (skip if it is the temporary body wrapper)
-        if (!isBodyWrapper &amp;&amp; oldNode.nodeType === Node.ELEMENT_NODE &amp;&amp; newNode.nodeType === Node.ELEMENT_NODE) {
-            this.#patchAttributes(oldNode, newNode);
-        }
+        const isCurrentlyVisible = el.style.display !== 'none';
 
-        // 2. Diff children
-        const oldChildren = Array.from(oldNode.childNodes);
-        const newChildren = Array.from(newNode.childNodes);
-
-        let oldIndex = 0;
-        let newIndex = 0;
-
-        while (newIndex &lt; newChildren.length) {
-            const newChild = newChildren[newIndex];
-            let oldChild = oldChildren[oldIndex];
-
-            // Skip items managed by ListManager in the old DOM
-            while (oldChild &amp;&amp; oldChild.nodeType === Node.ELEMENT_NODE &amp;&amp; oldChild.hasAttribute('data-ax-list-item')) {
-                oldIndex++;
-                oldChild = oldChildren[oldIndex];
-            }
-
-            if (!oldChild) {
-                // Add remaining new children
-                oldNode.appendChild(newChild.cloneNode(true));
-            } else if (this.#isSameNodeType(oldChild, newChild)) {
-                // Nodes are same type, patch them
-                if (oldChild.nodeType === Node.TEXT_NODE) {
-                    if (oldChild.textContent !== newChild.textContent) {
-                        oldChild.textContent = newChild.textContent;
-                    }
-                } else {
-                    this.#patchNode(oldChild, newChild);
-                }
-                oldIndex++;
+        if (!el.axShowInitialized) {
+          el.style.display = value ? el.__originalDisplay : 'none';
+          el.axShowInitialized = true;
+        } else if (value !== isCurrentlyVisible) {
+          const transitionName = this.getTransitionName(el, resolveExpression);
+          if (transitionName) {
+            if (value) {
+              el.style.display = el.__originalDisplay;
+              this.enter(el, transitionName);
             } else {
-                // Nodes are different, replace
-                oldNode.replaceChild(newChild.cloneNode(true), oldChild);
-                oldIndex++;
+              this.leave(el, transitionName, () => {
+                el.style.display = 'none';
+              });
             }
-            newIndex++;
+          } else {
+            el.style.display = value ? el.__originalDisplay : 'none';
+          }
         }
-
-        // Remove remaining old children (that are not managed by ListManager)
-        while (oldIndex &lt; oldChildren.length) {
-            const oldChild = oldChildren[oldIndex];
-            if (!(oldChild.nodeType === Node.ELEMENT_NODE &amp;&amp; oldChild.hasAttribute('data-ax-list-item'))) {
-                oldNode.removeChild(oldChild);
-            }
-            oldIndex++;
-        }
+      } catch (err) {
+        logger.warn(
+          formatMessage(AvenxErrorCodes.DIRECTIVE_SHOW_EVALUATION_FAILED, expr, err.message || err)
+        );
+      }
     }
 
-    /**
-     * Checks if two nodes are of the same type and name.
-     * @private
-     */
-    #isSameNodeType(nodeA, nodeB) {
-        return nodeA.nodeType === nodeB.nodeType &amp;&amp; nodeA.nodeName === nodeB.nodeName;
-    }
-
-    /**
-     * Syncs attributes from newNode to oldNode.
-     * @private
-     */
-    #patchAttributes(oldNode, newNode) {
-        const oldAttrs = oldNode.attributes;
-        const newAttrs = newNode.attributes;
-
-        // Remove old attributes that are gone
-        for (let i = oldAttrs.length - 1; i >= 0; i--) {
-            const attr = oldAttrs[i];
-            if (!newNode.hasAttribute(attr.name)) {
-                oldNode.removeAttribute(attr.name);
-                if (attr.name === 'value' &amp;&amp; ['INPUT', 'TEXTAREA', 'SELECT'].includes(oldNode.nodeName)) {
-                    oldNode.value = '';
-                }
-            }
+    // 3. data-ax-class
+    if (el.hasAttribute('data-ax-class')) {
+      const expr = el.getAttribute('data-ax-class');
+      try {
+        const value = localResolve(expr);
+        // Clean up classes added by previous data-ax-class evaluation
+        if (el.__lastAxClasses) {
+          for (const cls of el.__lastAxClasses) {
+            el.classList.remove(cls);
+          }
         }
 
-        // Add or update attributes
-        for (let i = 0; i &lt; newAttrs.length; i++) {
-            const attr = newAttrs[i];
-            if (oldNode.getAttribute(attr.name) !== attr.value) {
-                oldNode.setAttribute(attr.name, attr.value);
+        const newClasses = [];
+        if (typeof value === 'string') {
+          newClasses.push(...value.split(/\s+/).filter(Boolean));
+        } else if (value &amp;&amp; typeof value === 'object') {
+          for (const [cls, enabled] of Object.entries(value)) {
+            if (enabled) {
+              newClasses.push(cls);
             }
-            if (attr.name === 'value' &amp;&amp; ['INPUT', 'TEXTAREA', 'SELECT'].includes(oldNode.nodeName)) {
-                if (oldNode.value !== attr.value) {
-                    oldNode.value = attr.value;
-                }
-            }
+          }
         }
+
+        for (const cls of newClasses) {
+          el.classList.add(cls);
+        }
+        el.__lastAxClasses = newClasses;
+      } catch (err) {
+        logger.warn(
+          formatMessage(AvenxErrorCodes.DIRECTIVE_CLASS_EVALUATION_FAILED, expr, err.message || err)
+        );
+      }
     }
+
+    // 4. Dynamic Attribute Name Binding (:[attrName]="attrValue")
+    const elAttrs = Array.from(el.attributes || []);
+    const currentDynAttrs = [];
+    for (const attr of elAttrs) {
+      const match = attr.name.match(/^:\[(.*)\]$/);
+      if (match) {
+        const nameExpr = match[1];
+        const valExpr = attr.value;
+        let resolvedName = null;
+        try {
+          resolvedName = localResolve(nameExpr);
+        } catch (err) {
+          logger.warn(`Failed to evaluate dynamic attribute name expression "${nameExpr}": ${err.message || err}`);
+        }
+
+        if (resolvedName != null &amp;&amp; String(resolvedName).trim() !== '') {
+          const attrName = String(resolvedName).trim();
+          let resolvedVal = null;
+          if (valExpr) {
+            try {
+              resolvedVal = localResolve(valExpr);
+            } catch (err) {
+              logger.warn(`Failed to evaluate dynamic attribute value expression "${valExpr}": ${err.message || err}`);
+            }
+          }
+
+          if (resolvedVal !== false &amp;&amp; resolvedVal != null) {
+            currentDynAttrs.push(attrName);
+            if (resolvedVal === true) {
+              el.setAttribute(attrName, 'true');
+              if (isBooleanAttribute(attrName)) {
+                el[attrName] = true;
+              }
+            } else {
+              el.setAttribute(attrName, String(resolvedVal));
+            }
+          } else {
+            currentDynAttrs.push(attrName);
+            if (el.hasAttribute(attrName)) {
+              el.removeAttribute(attrName);
+              if (isBooleanAttribute(attrName)) {
+                el[attrName] = false;
+              }
+            }
+          }
+        }
+        el.removeAttribute(attr.name);
+      }
+    }
+
+    const prevDynAttrs = el.__avenxDynAttrs || [];
+    for (const oldName of prevDynAttrs) {
+      if (!currentDynAttrs.includes(oldName)) {
+        if (el.hasAttribute(oldName)) {
+          el.removeAttribute(oldName);
+          if (isBooleanAttribute(oldName)) {
+            el[oldName] = false;
+          }
+        }
+      }
+    }
+    if (currentDynAttrs.length > 0 || prevDynAttrs.length > 0) {
+      el.__avenxDynAttrs = currentDynAttrs;
+    }
+
+    // 5. Custom Directives
+    if (app &amp;&amp; app.directives) {
+      const attrs = Array.from(el.attributes || []);
+      for (const attr of attrs) {
+        if (attr.name.startsWith('data-ax-')) {
+          // Split dot-notation modifiers off the directive name, mirroring the
+          // event modifier convention in core/events/bindEvents.js.
+          const attrKey = attr.name.slice(8);
+          const parts = attrKey.split('.');
+          const dirName = parts[0];
+          // Ignore built-in core directives
+          if (
+            dirName === 'show' ||
+            dirName === 'class' ||
+            dirName === 'html' ||
+            dirName === 'static' ||
+            dirName === 'transition' ||
+            dirName === 'for' ||
+            dirName === 'as' ||
+            dirName === 'key' ||
+            dirName === 'list-item' ||
+            dirName === 'key-val' ||
+            dirName === 'validate' ||
+            dirName === 'validate-messages'
+          ) {
+            continue;
+          }
+          if (app.directives.has(dirName)) {
+            const expr = attr.value;
+            let value;
+            if (expr) {
+              try {
+                value = localResolve(expr);
+              } catch (err) {
+                logger.warn(
+                  `Failed to evaluate custom directive ${dirName} expression "${expr}": ${err.message || err}`
+                );
+              }
+            }
+
+            if (!el.__avenx_directives) {
+              el.__avenx_directives = new Map();
+            }
+
+            // Keyed by the full attribute suffix so that two modifier variants of
+            // the same directive on one element do not overwrite each other.
+            const oldInfo = el.__avenx_directives.get(attrKey);
+
+            if (!oldInfo) {
+              const modifiers = {};
+              for (let i = 1; i &lt; parts.length; i++) {
+                if (parts[i]) modifiers[parts[i]] = true;
+              }
+
+              el.__avenx_directives.set(attrKey, {
+                name: dirName,
+                value,
+                oldValue: undefined,
+                expression: expr,
+                modifiers,
+                mountedCalled: false,
+                valueChanged: false,
+              });
+            } else {
+              const oldValue = oldInfo.value;
+
+              if (value !== oldValue) {
+                oldInfo.oldValue = oldValue;
+                oldInfo.value = value;
+                oldInfo.expression = expr;
+                oldInfo.valueChanged = true;
+              } else {
+                // The directive value has not changed.
+                // Make sure a previous update flag cannot trigger
+                // another updated() lifecycle call.
+                oldInfo.valueChanged = false;
+              }
+            }
+
+            if (this.sessionElements) {
+              this.sessionElements.add(el);
+            }
+          }
+        }
+      }
+    }
+
+    return skipChildren;
+  }
+
+  /**
+   * Recursively applies custom directives to an element and its children.
+   * @param {Element} element - The element tree root.
+   * @param {function(string): any} resolveExpression - The expression evaluator.
+   * @param {object} [app] - The application context.
+   */
+  applyDirectives(element, resolveExpression, app) {
+    const prevSession = this.sessionElements;
+    const prevRoot = this.patchRoot;
+    this.sessionElements = new Set();
+    this.patchRoot = element;
+
+    try {
+      this.applyDirectivesInternal(element, resolveExpression, app);
+      this.flushLifecycleHooks(app);
+    } finally {
+      this.sessionElements = prevSession;
+      this.patchRoot = prevRoot;
+    }
+  }
+
+  /**
+   * Recursively applies directives to an element and its children.
+   * @param {Element} element - The target element.
+   * @param {Function} resolveExpression - Expression resolver callback.
+   * @param {object} [app] - The application context.
+   */
+  applyDirectivesInternal(element, resolveExpression, app) {
+    const skip = this.#applyDirectives(element, resolveExpression, app);
+    if (!skip) {
+      const children = Array.from(element.childNodes);
+      for (const child of children) {
+        if (child.nodeType === Node.ELEMENT_NODE) {
+          this.applyDirectivesInternal(child, resolveExpression, app);
+        }
+      }
+    }
+  }
+
+  /**
+   * Applies the enter transition classes and triggers animation/transition.
+   * @param {Element} el - The element to animate.
+   * @param {string} transitionName - The transition name (e.g. 'fade').
+   */
+  enter(el, transitionName) {
+    if (el.nodeType !== Node.ELEMENT_NODE) return;
+    const name = transitionName || 'ax';
+    const enterClass = `${name}-enter`;
+    const enterActiveClass = `${name}-enter-active`;
+    const enterToClass = `${name}-enter-to`;
+
+    if (el._cleanupTransition) {
+      el._cleanupTransition();
+    }
+
+    el.classList.add(enterClass);
+    el.classList.add(enterActiveClass);
+
+    let resolved = false;
+    let timeoutId = null;
+
+    const done = () => {
+      if (resolved) return;
+      resolved = true;
+      el.classList.remove(enterActiveClass);
+      el.classList.remove(enterToClass);
+      el.removeEventListener('transitionend', done);
+      el.removeEventListener('animationend', done);
+      if (timeoutId) clearTimeout(timeoutId);
+      delete el._cleanupTransition;
+    };
+
+    el._cleanupTransition = done;
+
+    el.addEventListener('transitionend', done);
+    el.addEventListener('animationend', done);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (resolved) return;
+        el.classList.remove(enterClass);
+        el.classList.add(enterToClass);
+
+        const duration = getTransitionDuration(el);
+        if (duration === 0) {
+          done();
+        } else {
+          timeoutId = setTimeout(done, duration + 50);
+        }
+      });
+    });
+  }
+
+  /**
+   * Applies the leave transition classes, triggers animation, and cleans up when complete.
+   * @param {Element} el - The element to animate.
+   * @param {string} transitionName - The transition name (e.g. 'fade').
+   * @param {function(): void} removeCallback - Callback invoked when the leave transition completes.
+   */
+  leave(el, transitionName, removeCallback) {
+    if (el.nodeType !== Node.ELEMENT_NODE) {
+      if (removeCallback) removeCallback();
+      return;
+    }
+    const name = transitionName || 'ax';
+    const leaveClass = `${name}-leave`;
+    const leaveActiveClass = `${name}-leave-active`;
+    const leaveToClass = `${name}-leave-to`;
+
+    if (el._cleanupTransition) {
+      el._cleanupTransition();
+    }
+
+    el._isLeaving = true;
+
+    el.classList.add(leaveClass);
+    el.classList.add(leaveActiveClass);
+
+    let resolved = false;
+    let timeoutId = null;
+
+    const done = () => {
+      if (resolved) return;
+      resolved = true;
+      el.classList.remove(leaveActiveClass);
+      el.classList.remove(leaveToClass);
+      el.removeEventListener('transitionend', done);
+      el.removeEventListener('animationend', done);
+      if (timeoutId) clearTimeout(timeoutId);
+      delete el._cleanupTransition;
+      delete el._isLeaving;
+      if (removeCallback) removeCallback();
+    };
+
+    el._cleanupTransition = done;
+
+    el.addEventListener('transitionend', done);
+    el.addEventListener('animationend', done);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (resolved) return;
+        el.classList.remove(leaveClass);
+        el.classList.add(leaveToClass);
+
+        const duration = getTransitionDuration(el);
+        if (duration === 0) {
+          done();
+        } else {
+          timeoutId = setTimeout(done, duration + 50);
+        }
+      });
+    });
+  }
+
+  /**
+   * Resolves the transition name for an element.
+   * @param {Element} el - The element.
+   * @param {function(string): any} [resolveExpression] - The expression evaluator.
+   * @returns {string|null} The resolved transition name, or null.
+   */
+  getTransitionName(el, resolveExpression) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return null;
+    if (!el.hasAttribute('data-ax-transition')) return null;
+    const expr = el.getAttribute('data-ax-transition');
+    if (!expr) return 'ax';
+    if (!resolveExpression) return expr;
+    const slotScope = this.#getSlotScope(el);
+    const localResolve = slotScope ? (e) => resolveExpression(e, slotScope) : resolveExpression;
+    try {
+      const val = localResolve(expr);
+      return typeof val === 'string' ? val : expr;
+    } catch {
+      return expr;
+    }
+  }
+
+  /**
+   * Triggers the enter transition if transition configurations are present.
+   * @param {Element} el - The element.
+   * @param {function(string): any} [resolveExpression] - The expression evaluator.
+   */
+  triggerEnter(el, resolveExpression) {
+    if (el.nodeType !== Node.ELEMENT_NODE) return;
+    const transitionName = this.getTransitionName(el, resolveExpression);
+    if (transitionName) {
+      el._transitionName = transitionName;
+      this.enter(el, transitionName);
+    }
+  }
+
+  /**
+   * Triggers the leave transition or asynchronous unmounting of an element.
+   * @param {Element} el - The element leaving.
+   * @param {Function} resolveExpression - Expression evaluator callback.
+   * @param {Function} removeCallback - Callback to remove element from DOM.
+   * @param {object} [app] - The application context.
+   */
+  triggerLeave(el, resolveExpression, removeCallback, app) {
+    if (el.nodeType !== Node.ELEMENT_NODE) {
+      if (removeCallback) removeCallback();
+      return;
+    }
+
+    const compInstance = el.__avenx_comp_instance;
+    const proceedWithRemoval = () => {
+      const done = () => {
+        this.triggerUnmounted(el, app);
+        if (removeCallback) removeCallback();
+      };
+      const transitionName = el._transitionName || this.getTransitionName(el, resolveExpression);
+      if (transitionName) {
+        this.leave(el, transitionName, done);
+      } else {
+        done();
+      }
+    };
+
+    if (compInstance &amp;&amp; typeof compInstance.unmount === 'function') {
+      const unmountResult = compInstance.unmount();
+      if (unmountResult instanceof Promise) {
+        unmountResult.then(proceedWithRemoval);
+        return;
+      }
+    }
+    proceedWithRemoval();
+  }
+
+  /**
+   * Flattens &lt;transition> elements inside a root element.
+   * @param {Element} node - The root element.
+   */
+  flattenTransitionTags(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
+    const transitions = Array.from(node.querySelectorAll('transition'));
+    for (const trans of transitions) {
+      const nameAttr = trans.getAttribute('name');
+      let transitionValue = 'ax';
+      if (nameAttr) {
+        if (nameAttr.startsWith('{{') &amp;&amp; nameAttr.endsWith('}}')) {
+          transitionValue = nameAttr.slice(2, -2).trim();
+        } else {
+          transitionValue = nameAttr;
+        }
+      }
+      const children = Array.from(trans.childNodes);
+      for (const child of children) {
+        if (child.nodeType === Node.ELEMENT_NODE) {
+          child.setAttribute('data-ax-transition', transitionValue);
+        }
+        trans.parentNode.insertBefore(child, trans);
+      }
+      trans.parentNode.removeChild(trans);
+    }
+  }
+
+  /**
+   * Checks if a node is in the currently patched DOM tree.
+   * @param {Element} el
+   * @returns {boolean}
+   */
+  isNodeInPatchTree(el) {
+    if (!this.patchRoot) return false;
+    let curr = el;
+    while (curr) {
+      if (curr === this.patchRoot) return true;
+      curr = curr.parentNode || (curr.host &amp;&amp; curr.host.nodeType === 1 ? curr.host : null);
+    }
+    return false;
+  }
+
+  /**
+   * Triggers the unmounted hook recursively on a node and its descendants.
+   * @param {Node} node
+   * @param {object} app
+   */
+  triggerUnmounted(node, app) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const descendants = Array.from(node.querySelectorAll('*'));
+    for (const desc of descendants) {
+      this.triggerUnmountedForElement(desc, app);
+    }
+    this.triggerUnmountedForElement(node, app);
+  }
+
+  /**
+   * Triggers the unmounted hook on a single element.
+   * @param {Element} el
+   * @param {object} app
+   */
+  triggerUnmountedForElement(el, app) {
+    if (el.__avenx_directives) {
+      for (const [dirName, info] of el.__avenx_directives.entries()) {
+        if (info.mountedCalled) {
+          const dirDef = app &amp;&amp; app.directives &amp;&amp; app.directives.get(info.name);
+          if (dirDef &amp;&amp; typeof dirDef.unmounted === 'function') {
+            try {
+              dirDef.unmounted(el, {
+                value: info.value,
+                oldValue: info.value,
+                expression: info.expression,
+                modifiers: info.modifiers,
+              });
+            } catch (err) {
+              logger.warn(`Error in unmounted hook of directive ${dirName}: ${err.message || err}`);
+            }
+          }
+          info.mountedCalled = false;
+        }
+      }
+    }
+  }
+
+  /**
+   * Flushes all lifecycle hooks collected during the patch session.
+   * @param {object} app
+   */
+  flushLifecycleHooks(app) {
+    if (!this.sessionElements || !app) return;
+    for (const el of this.sessionElements) {
+      if (!el.__avenx_directives) continue;
+
+      const isConnected = this.isNodeInPatchTree(el);
+      if (isConnected) {
+        for (const [dirName, info] of el.__avenx_directives.entries()) {
+          const dirDef = app.directives.get(info.name);
+          if (!dirDef) continue;
+
+          if (!info.mountedCalled) {
+            if (typeof dirDef.mounted === 'function') {
+              try {
+                dirDef.mounted(el, {
+                  value: info.value,
+                  expression: info.expression,
+                  modifiers: info.modifiers,
+                });
+              } catch (err) {
+                logger.error(`Error in mounted hook of directive ${dirName}: ${err.message || err}`);
+              }
+            }
+            info.mountedCalled = true;
+          } else if (info.valueChanged) {
+            if (typeof dirDef.updated === 'function') {
+              try {
+                dirDef.updated(el, {
+                  value: info.value,
+                  oldValue: info.oldValue,
+                  expression: info.expression,
+                  modifiers: info.modifiers,
+                });
+              } catch (err) {
+                logger.error(`Error in updated hook of directive ${dirName}: ${err.message || err}`);
+              }
+            }
+            info.valueChanged = false;
+          }
+        }
+      } else {
+        this.triggerUnmounted(el, app);
+      }
+    }
+  }
 }
 </code></pre>
         </article>
@@ -185,13 +1238,13 @@ export class DomPatcher {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="ProxyHandlerFactory_ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#RAW_SYMBOL">RAW_SYMBOL</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#queueJob">queueJob</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jun 25 2026 13:00:09 GMT+0200 (Mitteleuropäische Sommerzeit)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

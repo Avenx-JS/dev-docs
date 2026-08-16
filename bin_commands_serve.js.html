@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: bin/commands/serve.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: bin/commands/serve.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import fs from 'fs';
+import path from 'path';
+import http from 'http';
+import { exec } from 'child_process';
+import { buildProject } from './build.js';
+import { cyan, green, yellow, red } from '../colors.js';
+
+/**
+ * Formats an HTTP response status code with ANSI colors.
+ * @param {number|string} status
+ * @returns {string}
+ */
+export function formatStatusCode(status) {
+  const code = Number(status) || 0;
+  if (code >= 200 &amp;&amp; code &lt; 300) {
+    return green(code);
+  }
+  if (code >= 300 &amp;&amp; code &lt; 400) {
+    return yellow(code);
+  }
+  if (code >= 400) {
+    return red(code);
+  }
+  return String(code);
+}
+
+/**
+ * Formats a log line for an incoming HTTP request.
+ * @param {string} method - HTTP method (GET, POST, etc.)
+ * @param {string} url - Request URL path.
+ * @param {number|string} statusCode - Response HTTP status code.
+ * @param {number} durationMs - Execution time in milliseconds.
+ * @param {Date} [date] - Timestamp date object.
+ * @returns {string} The formatted log string.
+ */
+export function formatRequestLog(method, url, statusCode, durationMs, date = new Date()) {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const timestamp = `[${hours}:${minutes}:${seconds}]`;
+
+  const formattedStatus = formatStatusCode(statusCode);
+  const formattedDuration = `${Number(durationMs || 0).toFixed(1)}ms`;
+
+  return `${timestamp} ${method} ${url} - ${formattedStatus} (${formattedDuration})`;
+}
+
+/**
+ * Attaches an HTTP request logging listener to a response object.
+ * @param {object} req
+ * @param {object} res
+ * @param {Function} [logger] - Custom logger function.
+ * @returns {Function} Completion logger handler.
+ */
+export function attachRequestLogger(req, res, logger = console.log) {
+  const startTime = performance.now();
+  let logged = false;
+
+  const logResponse = () => {
+    if (logged) return;
+    logged = true;
+    const durationMs = performance.now() - startTime;
+    const statusCode = res.statusCode || 200;
+    const method = req.method || 'GET';
+    const url = req.url || '/';
+    const logLine = formatRequestLog(method, url, statusCode, durationMs);
+    logger(logLine);
+  };
+
+  res.on('finish', logResponse);
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      logResponse();
+    }
+  });
+
+  return logResponse;
+}
+
+/**
+ * Opens the browser to the specified URL.
+ * @param {string} url
+ */
+export function openBrowser(url) {
+  const start = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  exec(`${start} ${url}`);
+}
+
+/**
+ * Generates the default index.html template content.
+ * @param {object} cli
+ * @returns {string} The initial HTML template string.
+ */
+export function getInitialHtml(cli) {
+  return `&lt;!DOCTYPE html>
+&lt;html>
+&lt;head>
+    &lt;meta charset="utf-8">
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0">
+    &lt;title>My Avenx App&lt;/title>
+    &lt;link rel="stylesheet" href="${cli.config.distDir}/bundle.css">
+&lt;/head>
+&lt;body>
+    &lt;div id="app">&lt;/div>
+    &lt;script src="${cli.config.distDir}/bundle.js">&lt;/script>
+&lt;/body>
+&lt;/html>`;
+}
+
+/**
+ * Generates the Dev Server Inspection Dashboard HTML page.
+ * @param {object} cli
+ * @returns {string} The dashboard HTML content.
+ */
+export function getInspectorHtml(cli) {
+  const configJson = JSON.stringify(cli.config);
+  return `&lt;!DOCTYPE html>
+&lt;html>
+&lt;head>
+    &lt;meta charset="utf-8">
+    &lt;title>Avenx Inspection Dashboard&lt;/title>
+    &lt;style>
+        :root {
+            --bg-color: #09090b;
+            --card-bg: #18181b;
+            --card-border: #27272a;
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .dashboard-wrapper {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--card-border);
+            background: var(--card-bg);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .brand .title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-main);
+            letter-spacing: -0.01em;
+        }
+
+        .badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.25rem 0.6rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .badge.disconnected {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .badge.connected {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .dashboard-main {
+            display: flex;
+            flex: 1;
+            padding: 2rem;
+            gap: 2rem;
+        }
+
+        .sidebar {
+            width: 280px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .dashboard-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.5rem;
+            align-content: start;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+
+        .card:hover {
+            border-color: #3f3f46;
+        }
+
+        .card h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+            color: var(--text-main);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 1rem;
+            margin-bottom: 0.75rem;
+            color: var(--accent-blue);
+        }
+
+        .config-item {
+            font-size: 0.85rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .config-item strong {
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .info-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 0.25rem;
+        }
+
+        /* Custom Scrollbar */
+        .info-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .info-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .info-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .info-item {
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            font-size: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: background 0.2s;
+        }
+
+        .info-item:hover {
+            background: rgba(255, 255, 255, 0.03);
+            border-color: #3f3f46;
+        }
+
+        .info-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }
+
+        .route-path {
+            font-family: monospace;
+            color: var(--accent-blue);
+            font-weight: 600;
+        }
+
+        .route-page {
+            color: var(--text-muted);
+        }
+
+        .route-info {
+            background: rgba(59, 130, 246, 0.03);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: var(--accent-blue);
+        }
+
+        .comp-name {
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .comp-details {
+            padding-left: 0.75rem;
+            border-left: 2px solid var(--card-border);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            width: 100%;
+        }
+
+        .bridge-header {
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .state-explorer {
+            font-family: monospace;
+            background: #09090b;
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            white-space: pre-wrap;
+            word-break: break-all;
+            width: 100%;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid var(--card-border);
+            margin: 1.25rem 0;
+        }
+    &lt;/style>
+&lt;/head>
+&lt;body>
+    &lt;div class="dashboard-wrapper">
+        &lt;header class="app-header">
+            &lt;div class="brand">
+                &lt;span class="title">Avenx Inspector&lt;/span>
+            &lt;/div>
+            &lt;div class="status-indicator">
+                &lt;span class="badge" id="statusBadge">Connecting...&lt;/span>
+            &lt;/div>
+        &lt;/header>
+
+        &lt;main class="dashboard-main">
+            &lt;!-- Sidebar for Config Info -->
+            &lt;aside class="sidebar">
+                &lt;div class="card config-card">
+                    &lt;h3>Dev Server Config&lt;/h3>
+                    &lt;div class="config-item">&lt;strong>Port:&lt;/strong> &lt;span id="confPort">-&lt;/span>&lt;/div>
+                    &lt;div class="config-item">&lt;strong>Host:&lt;/strong> &lt;span id="confHost">-&lt;/span>&lt;/div>
+                    &lt;div class="config-item">&lt;strong>Src Dir:&lt;/strong> &lt;span id="confSrc">-&lt;/span>&lt;/div>
+                    &lt;div class="config-item">&lt;strong>Dist Dir:&lt;/strong> &lt;span id="confDist">-&lt;/span>&lt;/div>
+                &lt;/div>
+            &lt;/aside>
+
+            &lt;!-- Dashboard Grid Content -->
+            &lt;section class="dashboard-grid">
+                &lt;!-- Routing Section -->
+                &lt;div class="card grid-card routing-card">
+                    &lt;h3>Active Routing Table&lt;/h3>
+                    &lt;div id="routingList" class="info-list">&lt;/div>
+                    &lt;hr />
+                    &lt;h4>Current Route&lt;/h4>
+                    &lt;div id="currentRouteInfo" class="route-info">-&lt;/div>
+                &lt;/div>
+
+                &lt;!-- Components Section -->
+                &lt;div class="card grid-card components-card">
+                    &lt;h3>Active Component Tree&lt;/h3>
+                    &lt;div id="componentsList" class="info-list">&lt;/div>
+                &lt;/div>
+
+                &lt;!-- Bridges Section -->
+                &lt;div class="card grid-card bridges-card">
+                    &lt;h3>Bridges &amp; Reactive State&lt;/h3>
+                    &lt;div id="bridgesList" class="info-list">&lt;/div>
+                &lt;/div>
+            &lt;/section>
+        &lt;/main>
+    &lt;/div>
+
+    &lt;script>
+        window.__avenx_config = ${configJson};
+        
+        const channel = new BroadcastChannel('avenx-inspector-channel');
+        let lastUpdate = 0;
+
+        function updateStatus(connected) {
+            const badge = document.getElementById('statusBadge');
+            if (connected) {
+                badge.textContent = 'Live';
+                badge.className = 'badge connected';
+            } else {
+                badge.textContent = 'Disconnected';
+                badge.className = 'badge disconnected';
+            }
+        }
+
+        channel.onmessage = (event) => {
+            if (event.data &amp;&amp; event.data.type === 'inspect-data') {
+                updateStatus(true);
+                lastUpdate = Date.now();
+                renderDashboard(event.data.data);
+            }
+        };
+
+        // Render server config immediately
+        const config = window.__avenx_config || {};
+        document.getElementById('confPort').textContent = config.server?.port || '3000';
+        document.getElementById('confHost').textContent = config.server?.host || 'localhost';
+        document.getElementById('confSrc').textContent = config.srcDir || 'src';
+        document.getElementById('confDist').textContent = config.distDir || 'dist';
+
+        // Request data periodically to establish connection
+        function requestUpdate() {
+            channel.postMessage('request-inspect-data');
+            // If no message received for 2.5 seconds, show disconnected
+            if (Date.now() - lastUpdate > 2500) {
+                updateStatus(false);
+            }
+        }
+
+        setInterval(requestUpdate, 1000);
+        requestUpdate();
+
+        function renderDashboard(data) {
+            // 1. Render routes
+            const routingList = document.getElementById('routingList');
+            routingList.innerHTML = '';
+            if (data.routes &amp;&amp; Object.keys(data.routes).length > 0) {
+                Object.entries(data.routes).forEach(([pattern, def]) => {
+                    const pageName = typeof def === 'string' ? def : def.page;
+                    const item = document.createElement('div');
+                    item.className = 'info-item';
+                    item.innerHTML = \`
+                        &lt;div class="info-header">
+                            &lt;span class="route-path">\${pattern}&lt;/span>
+                            &lt;span class="route-page">\${pageName}&lt;/span>
+                        &lt;/div>
+                    \`;
+                    routingList.appendChild(item);
+                });
+            } else {
+                routingList.innerHTML = '&lt;div class="text-muted" style="font-size:0.85rem;color:var(--text-muted);">No routes configured.&lt;/div>';
+            }
+
+            // 2. Render current route
+            const currentRouteInfo = document.getElementById('currentRouteInfo');
+            if (data.currentRoute) {
+                currentRouteInfo.innerHTML = \`
+                    &lt;div style="margin-bottom:0.25rem;">&lt;strong>Hash:&lt;/strong> &lt;span style="color:var(--accent-blue);">\${data.currentRoute.hash}&lt;/span>&lt;/div>
+                    &lt;div style="margin-bottom:0.25rem;">&lt;strong>Page:&lt;/strong> \${data.currentRoute.page}&lt;/div>
+                    &lt;div style="margin-top:0.5rem;">&lt;strong>Params:&lt;/strong>&lt;/div>
+                    &lt;pre class="state-explorer">\${JSON.stringify(data.currentRoute.params || {}, null, 2)}&lt;/pre>
+                \`;
+            } else {
+                currentRouteInfo.innerHTML = '&lt;div style="color:var(--text-muted);">None (App not routing or on initial load)&lt;/div>';
+            }
+
+            // 3. Render active components
+            const componentsList = document.getElementById('componentsList');
+            componentsList.innerHTML = '';
+            if (data.activeComponents &amp;&amp; data.activeComponents.length > 0) {
+                data.activeComponents.forEach((comp) => {
+                    const item = document.createElement('div');
+                    item.className = 'info-item';
+                    item.innerHTML = \`
+                        &lt;div class="info-header">
+                            &lt;span class="comp-name">\${comp.name}&lt;/span>
+                        &lt;/div>
+                        &lt;div class="comp-details">
+                            &lt;div style="margin-top:0.25rem;">&lt;strong>Props:&lt;/strong>&lt;/div>
+                            &lt;pre class="state-explorer">\${JSON.stringify(comp.props, null, 2)}&lt;/pre>
+                            &lt;div style="margin-top:0.5rem;">&lt;strong>State:&lt;/strong>&lt;/div>
+                            &lt;pre class="state-explorer">\${JSON.stringify(comp.state, null, 2)}&lt;/pre>
+                        &lt;/div>
+                    \`;
+                    componentsList.appendChild(item);
+                });
+            } else {
+                componentsList.innerHTML = '&lt;div class="text-muted" style="font-size:0.85rem;color:var(--text-muted);">No active components in DOM.&lt;/div>';
+            }
+
+            // 4. Render bridges
+            const bridgesList = document.getElementById('bridgesList');
+            bridgesList.innerHTML = '';
+            if (data.registeredBridges &amp;&amp; Object.keys(data.registeredBridges).length > 0) {
+                Object.entries(data.registeredBridges).forEach(([name, state]) => {
+                    const item = document.createElement('div');
+                    item.className = 'info-item';
+                    item.innerHTML = \`
+                        &lt;div class="info-header">
+                            &lt;span class="bridge-header">\${name}&lt;/span>
+                        &lt;/div>
+                        &lt;pre class="state-explorer">\${JSON.stringify(state, null, 2)}&lt;/pre>
+                    \`;
+                    bridgesList.appendChild(item);
+                });
+            } else {
+                bridgesList.innerHTML = '&lt;div class="text-muted" style="font-size:0.85rem;color:var(--text-muted);">No bridges registered.&lt;/div>';
+            }
+        }
+    &lt;/script>
+&lt;/body>
+&lt;/html>`;
+}
+
+/**
+ * Watches the src directory for changes and triggers a rebuild.
+ * @param {object} cli
+ */
+export function watchProject(cli) {
+  let timeout;
+  const srcPath = path.join(cli.baseDir, cli.config.srcDir);
+
+  if (!fs.existsSync(srcPath)) return;
+
+  fs.watch(srcPath, { recursive: true }, (eventType, filename) => {
+    if (filename) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        console.log(`\n${cyan(`📄 Change detected: ${filename}. Rebuilding...`)}`);
+        buildProject(cli);
+
+        if (cli.liveReloadClients) {
+          cli.liveReloadClients.forEach((client) => {
+            client.write('data: reload\n\n');
+          });
+        }
+      }, 100);
+    }
+  });
+}
+
+/**
+ * Listens on the requested port, incrementing it when the address is occupied.
+ * @param {object} server
+ * @param {number|string} requestedPort
+ * @param {string} host
+ * @param {Function} onListening
+ */
+export function listenWithPortFallback(server, requestedPort, host, onListening) {
+  let port = Number(requestedPort);
+
+  server.once('listening', () => onListening(port));
+  server.on('error', (err) => {
+    if (err.code !== 'EADDRINUSE' || port >= 65535) {
+      throw err;
+    }
+
+    const occupiedPort = port;
+    port += 1;
+    console.warn(`\n${yellow(`Port ${occupiedPort} is already in use. Trying ${port} instead.`)}`);
+    server.listen(port, host);
+  });
+
+  server.listen(port, host);
+}
+
+/**
+ * Starts a local development server and watches for changes.
+ * @param {object} cli
+ * @param {number|string} port
+ * @param {string} [host]
+ */
+export function serveProject(cli, port, host = 'localhost') {
+  buildProject(cli);
+
+  if (cli.config.server.liveReload) {
+    cli.liveReloadClients = [];
+    watchProject(cli);
+  }
+
+  const server = http.createServer((req, res) => {
+    attachRequestLogger(req, res);
+    if (cli.config.server.liveReload &amp;&amp; req.url === '/__avenx_live_reload__') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      res.write('data: connected\n\n');
+
+      cli.liveReloadClients.push(res);
+
+      req.on('close', () => {
+        cli.liveReloadClients = cli.liveReloadClients.filter((client) => client !== res);
+      });
+      return;
+    }
+    if (req.url === '/__avenx-inspect') {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(getInspectorHtml(cli));
+      return;
+    }
+
+    let filePath = path.join(cli.baseDir, req.url === '/' ? 'index.html' : req.url);
+
+    if (!fs.existsSync(filePath) &amp;&amp; !path.extname(filePath)) {
+      filePath = path.join(cli.baseDir, 'index.html');
+    }
+
+    const extname = String(path.extname(filePath)).toLowerCase();
+    const mimeTypes = {
+      '.html': 'text/html',
+      '.js': 'text/javascript',
+      '.css': 'text/css',
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+    };
+
+    const contentType = mimeTypes[extname] || 'application/octet-stream';
+
+    fs.readFile(filePath, (error, content) => {
+      if (error) {
+        if (error.code === 'ENOENT') {
+          res.writeHead(404);
+          res.end('File not found');
+        } else {
+          res.writeHead(500);
+          res.end('Server error: ' + error.code);
+        }
+      } else {
+        let responseContent = content;
+        if (cli.config.server.liveReload &amp;&amp; contentType === 'text/html') {
+          const script = `
+&lt;script>
+    window.__avenx_inspect_enabled = true;
+    if ('EventSource' in window) {
+        const source = new EventSource('/__avenx_live_reload__');
+        source.onmessage = (e) => {
+            if (e.data === 'reload') {
+                window.location.reload();
+            }
+        };
+    }
+&lt;/script>
+`;
+          const contentStr = content.toString('utf-8');
+          if (contentStr.includes('&lt;/body>')) {
+            responseContent = contentStr.replace('&lt;/body>', `${script}&lt;/body>`);
+          } else {
+            responseContent = contentStr + script;
+          }
+        }
+
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(responseContent, 'utf-8');
+      }
+    });
+  });
+
+  listenWithPortFallback(server, port, host, (activePort) => {
+    const url = `http://${host}:${activePort}`;
+    console.log(`\n${green(`🚀 Dev-Server running at ${url}`)}`);
+    if (cli.config.server.liveReload) {
+      console.log(cyan(`👀 Watching for changes in ${cli.config.srcDir}/...\n`));
+    }
+    openBrowser(url);
+  });
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

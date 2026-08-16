@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/core/security/sandbox.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/core/security/sandbox.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { AvenxError, AvenxErrorCodes } from '../runtime/AvenxError.js';
+/**
+ * @file sandbox.js
+ * @description Secure Template Expression Sandbox module for the Avenx-JS framework.
+ * Located at `lib/core/security/sandbox.js`.
+ * To prevent critical security vulnerabilities such as prototype pollution and Cross-Site Scripting (XSS),
+ * all template expressions and computed properties execute within an isolated execution sandbox wrapper.
+ * The sandbox dynamically guards evaluation context by blocking access to structural object properties
+ * (`__proto__`, `constructor`, `prototype`) and restricts active identifier scopes strictly to the
+ * `ALLOWED_GLOBALS` whitelist map.
+ * If an expression attempts to invoke an unauthorized standard window API environment variable
+ * (e.g., calling `alert()` or checking `localStorage` directly in an HTML attribute binding),
+ * the application state will gracefully halt and trigger an execution failure throw code: **`AVX_R15`**.
+ * @example
+ * // ❌ ANTI-PATTERN (Will trigger an AVX_R15 Sandbox Violation at runtime)
+ * // &lt;button onclick="alert('Operation successful!')">Submit&lt;/button>
+ * // &lt;div v-if="localStorage.getItem('user_token')">Profile Content&lt;/div>
+ * @example
+ * // ✅ PROPER ARCHITECTURAL PATTERN
+ * // Decouple browser environment window APIs into standard component method actions:
+ * export default {
+ * name: 'SecureActionComponent',
+ * methods: {
+ * handleSubmit() {
+ * // Native browser ecosystem APIs are fully available here
+ * alert('Operation successful!');
+ * localStorage.setItem('user_token', 'validated_hash');
+ * }
+ * }
+ * };
+ */
+
+/**
+ * Whitelist allocation set tracking global identifiers authorized for inline evaluation scope.
+ * Global scopes outside this tracking collection are rejected with a sandbox exception.
+ * @type {Set&lt;string>}
+ * @property {string} Math - Native mathematical calculations and constants.
+ * @property {string} JSON - Structured string serialization and parsing tools.
+ * @property {string} Array - Array generation constructors.
+ * @property {string} Object - Standard JavaScript object manipulators.
+ * @property {string} String - Text parsing constructors.
+ * @property {string} console - Core debugging console methods.
+ * @property {string} parseInt - Numeric text converter algorithms.
+ * @property {string} parseFloat - Decimal text converter algorithms.
+ */
+
+const ALLOWED_GLOBALS = new Set([
+  'Math',
+  'JSON',
+  'Array',
+  'Object',
+  'String',
+  'Number',
+  'Boolean',
+  'Date',
+  'Error',
+  'Map',
+  'Set',
+  'Promise',
+  'console',
+  'parseInt',
+  'parseFloat',
+  'isNaN',
+  'isFinite',
+  'decodeURI',
+  'decodeURIComponent',
+  'encodeURI',
+  'encodeURIComponent',
+  'undefined',
+  'NaN',
+  'Infinity',
+]);
+
+const RESTRICTED_GLOBALS = new Set([
+  'window',
+  'document',
+  'localStorage',
+  'sessionStorage',
+  'location',
+  'navigator',
+  'history',
+  'fetch',
+  'alert',
+  'confirm',
+  'prompt',
+  'setTimeout',
+  'setInterval',
+  'clearTimeout',
+  'clearInterval',
+  'XMLHttpRequest',
+  'WebSocket',
+  'global',
+  'globalThis',
+  'process',
+  'eval',
+  'Function',
+]);
+
+/**
+ * Determines whether a property key refers to a restricted global object.
+ * @param {string|symbol} key - Property key to check.
+ * @returns {boolean}
+ */
+function isRestrictedGlobal(key) {
+  if (typeof key !== 'string') return false;
+  if (ALLOWED_GLOBALS.has(key)) return false;
+  if (RESTRICTED_GLOBALS.has(key)) return true;
+  try {
+    return typeof globalThis !== 'undefined' &amp;&amp; key in globalThis;
+  } catch {
+    return false;
+  }
+}
+
+const RAW_TARGET = Symbol.for('rawTarget');
+const proxyCache = new WeakMap();
+
+try {
+  Object.defineProperty(Function.prototype, 'constructor', {
+    get() {
+      throw new AvenxError(
+        AvenxErrorCodes.SANDBOX_VIOLATION,
+        'Access to Function constructor is blocked for security reasons.',
+      );
+    },
+    configurable: true,
+  });
+} catch {
+  // Ignore if descriptor is already configured or frozen
+}
+
+/**
+ * Unwraps a value if it's a sandbox Proxy, returning its raw target object.
+ * @param {any} val - The value to unwrap.
+ * @returns {any}
+ */
+function unwrap(val) {
+  if (val &amp;&amp; typeof val === 'object' &amp;&amp; val[RAW_TARGET]) {
+    return val[RAW_TARGET];
+  }
+  return val;
+}
+
+/**
+ * Wraps an object or function recursively in a Proxy that blocks prototype pollution
+ * and un-proxies arguments/context when called.
+ * @param {any} val - The value to wrap.
+ * @returns {any}
+ */
+function wrapValue(val) {
+  if (val === null || val === undefined) {
+    return val;
+  }
+
+  if (typeof val !== 'object' &amp;&amp; typeof val !== 'function') {
+    return val;
+  }
+
+  if (proxyCache.has(val)) {
+    return proxyCache.get(val);
+  }
+
+  const traps = {
+    /**
+     * Intercepts property retrieval.
+     * @param {object} target - The target object.
+     * @param {string|symbol} key - The property name.
+     * @param {object} receiver - The Proxy or inherits from it.
+     * @returns {any}
+     */
+    get(target, key, receiver) {
+      if (key === RAW_TARGET) {
+        return target;
+      }
+
+      if (key === '__proto__') {
+        throw new AvenxError(
+          AvenxErrorCodes.SANDBOX_VIOLATION,
+          'Access to property "__proto__" is blocked for security reasons.',
+        );
+      }
+      if (key === 'constructor' &amp;&amp; typeof target === 'function') {
+        throw new AvenxError(
+          AvenxErrorCodes.SANDBOX_VIOLATION,
+          'Access to property "constructor" on functions is blocked for security reasons.',
+        );
+      }
+
+      let res = Reflect.get(target, key, receiver);
+
+      const desc = Reflect.getOwnPropertyDescriptor(target, key);
+      if (desc &amp;&amp; !desc.configurable &amp;&amp; !desc.writable) {
+        return res;
+      }
+
+      if (typeof res === 'function') {
+        res = res.bind(target);
+      }
+
+      return wrapValue(res);
+    },
+
+    /**
+     * Intercepts property assignment.
+     * @param {object} target - The target object.
+     * @param {string|symbol} key - The property name.
+     * @param {any} value - The new value.
+     * @param {object} receiver - The object originally targeted.
+     * @returns {boolean}
+     */
+    set(target, key, value, receiver) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+        throw new AvenxError(
+          AvenxErrorCodes.SANDBOX_VIOLATION,
+          `Writing to property "${String(key)}" is blocked for security reasons.`,
+        );
+      }
+      return Reflect.set(target, key, value, receiver);
+    },
+  };
+
+  if (typeof val === 'function') {
+    /**
+     * Intercepts function execution.
+     * @param {object} target - The target function.
+     * @param {any} thisArg - The context.
+     * @param {any[]} argumentsList - The arguments passed.
+     * @returns {any}
+     */
+    traps.apply = function (target, thisArg, argumentsList) {
+      const rawThis = unwrap(thisArg);
+      const rawArgs = argumentsList.map(unwrap);
+      const result = Reflect.apply(target, rawThis, rawArgs);
+      return wrapValue(result);
+    };
+  }
+
+  const wrapped = new Proxy(val, traps);
+  proxyCache.set(val, wrapped);
+  return wrapped;
+}
+
+/**
+ * Handles creation of secure sandbox contexts.
+ */
+export class AvenxSandbox {
+  /**
+   * Statically validates an expression or statement string to ensure it does not contain
+   * forbidden property names.
+   * @param {string} source - The source code to check.
+   */
+  static validateSource(source) {
+    const FORBIDDEN_WORDS = /\b(constructor|__proto__|prototype)\b/;
+    if (typeof source === 'string' &amp;&amp; FORBIDDEN_WORDS.test(source)) {
+      throw new AvenxError(
+        AvenxErrorCodes.SANDBOX_VIOLATION,
+        'Access to "constructor", "__proto__", or "prototype" is blocked for security reasons.',
+      );
+    }
+  }
+  /**
+   * Creates a sandboxed Proxy context representing the combined scope and thisArg.
+   * @param {object} scope - The scope variables.
+   * @param {object} thisArg - The active 'this' context.
+   * @param {boolean} [excludeParams] - If true, excludes special event params from the has trap.
+   * @returns {Proxy} The sandboxed Proxy object.
+   */
+  static createProxy(scope, thisArg, excludeParams = false) {
+    const target = {};
+    const activeThis = thisArg || scope || {};
+
+    return new Proxy(target, {
+      /**
+       * Intercepts `has` check, claiming to have all properties to capture lookups in `with`.
+       * @param {object} t - The target object.
+       * @param {string|symbol} key - The property checked.
+       * @returns {boolean}
+       */
+      has(t, key) {
+        if (key === Symbol.unscopables) {
+          return false;
+        }
+        if (excludeParams &amp;&amp; (key === 'state' || key === 'methods' || key === 'event' || key === 'args')) {
+          return false;
+        }
+        return true;
+      },
+
+      /**
+       * Intercepts property retrieval.
+       * @param {object} t - The target object.
+       * @param {string|symbol} key - The property name.
+       * @returns {any}
+       */
+      get(t, key) {
+        if (key === Symbol.unscopables) {
+          return undefined;
+        }
+
+        if (key === RAW_TARGET) {
+          return activeThis;
+        }
+
+        if (key === '__proto__') {
+          throw new AvenxError(
+            AvenxErrorCodes.SANDBOX_VIOLATION,
+            'Access to property "__proto__" is blocked for security reasons.',
+          );
+        }
+        if (key === 'constructor' &amp;&amp; typeof activeThis === 'function') {
+          throw new AvenxError(
+            AvenxErrorCodes.SANDBOX_VIOLATION,
+            'Access to property "constructor" on functions is blocked for security reasons.',
+          );
+        }
+
+        if (scope &amp;&amp; key in scope) {
+          return wrapValue(scope[key]);
+        }
+
+        if (thisArg &amp;&amp; key in thisArg) {
+          return wrapValue(thisArg[key]);
+        }
+
+        if (ALLOWED_GLOBALS.has(key)) {
+          return wrapValue(globalThis[key]);
+        }
+
+        if (isRestrictedGlobal(key)) {
+          throw new AvenxError(
+            AvenxErrorCodes.SANDBOX_VIOLATION,
+            `[Avenx Sandbox Violation] Access to global object "${String(key)}" is restricted inside templates. Decouple browser APIs into component methods.`,
+          );
+        }
+
+        return undefined;
+      },
+
+      /**
+       * Intercepts property assignment.
+       * @param {object} t - The target object.
+       * @param {string|symbol} key - The property name.
+       * @param {any} value - The new value.
+       * @returns {boolean}
+       */
+      set(t, key, value) {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+          throw new AvenxError(
+            AvenxErrorCodes.SANDBOX_VIOLATION,
+            `Writing to property "${String(key)}" is blocked for security reasons.`,
+          );
+        }
+
+        if (isRestrictedGlobal(key) &amp;&amp; (!scope || !(key in scope)) &amp;&amp; (!thisArg || !(key in thisArg))) {
+          throw new AvenxError(
+            AvenxErrorCodes.SANDBOX_VIOLATION,
+            `[Avenx Sandbox Violation] Access to global object "${String(key)}" is restricted inside templates. Decouple browser APIs into component methods.`,
+          );
+        }
+
+        if (thisArg &amp;&amp; key in thisArg) {
+          thisArg[key] = value;
+          return true;
+        }
+
+        if (scope &amp;&amp; key in scope) {
+          scope[key] = value;
+          return true;
+        }
+
+        if (scope) {
+          scope[key] = value;
+          return true;
+        }
+
+        return false;
+      },
+
+      /**
+       * Intercepts `getPrototypeOf` check.
+       * @returns {object}
+       */
+      getPrototypeOf() {
+        return Reflect.getPrototypeOf(activeThis);
+      },
+
+      /**
+       * Intercepts `getOwnPropertyDescriptor` check.
+       * @param {object} t - The target.
+       * @param {string|symbol} key - The property.
+       * @returns {object}
+       */
+      getOwnPropertyDescriptor(t, key) {
+        const desc = Reflect.getOwnPropertyDescriptor(activeThis, key);
+        if (desc) return desc;
+        return { configurable: true, enumerable: true, writable: true };
+      },
+    });
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

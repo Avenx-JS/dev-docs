@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/core/runtime/VirtualList.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/core/runtime/VirtualList.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { AvenxComponent } from './AvenxComponent.js';
+import { TemplateRenderer } from '../renderer/renderTemplate.js';
+import { DomPatcher } from '../renderer/domPatch.js';
+
+/**
+ * Built-in component for high-performance virtualized list rendering.
+ * Only renders items currently visible within the viewport.
+ * Supports optional pagination mode with pageSize, current page tracking, and navigation controls.
+ */
+export class VirtualList extends AvenxComponent {
+  /**
+   * @param {object} [bridges] - External bridges.
+   * @param {object} [props] - Component properties (items, itemHeight, pageSize, page, totalItems, showControls).
+   */
+  constructor(bridges, props = {}) {
+    super(
+      {},
+      {},
+      bridges,
+      `
+      &lt;div class="virtual-list-container" style="display: flex; flex-direction: column; height: 100%; width: 100%;">
+        &lt;div class="virtual-list-viewport" data-ax-ref="viewport" style="overflow-y: auto; position: relative; flex: 1 1 auto; height: 100%; width: 100%;">
+          &lt;div class="virtual-list-spacer" data-ax-ref="spacer" data-ax-static style="box-sizing: border-box; width: 100%;">
+            &lt;!-- Recycled item DOM elements will be injected here -->
+          &lt;/div>
+        &lt;/div>
+        &lt;div class="virtual-list-pagination" data-ax-ref="pagination" style="display: none; box-sizing: border-box; padding: 8px 12px; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid rgba(0,0,0,0.1); user-select: none;">
+          &lt;div class="virtual-list-pagination-info" data-ax-ref="pageInfo" style="font-size: 13px; color: inherit;">&lt;/div>
+          &lt;div class="virtual-list-pagination-controls" style="display: flex; align-items: center; gap: 4px;">
+            &lt;button type="button" class="virtual-list-btn prev-btn" data-ax-ref="prevBtn" style="cursor: pointer; padding: 4px 10px; font-size: 13px;">&amp;laquo; Prev&lt;/button>
+            &lt;span class="virtual-list-page-number" data-ax-ref="pageNum" style="font-size: 13px; padding: 0 4px;">1&lt;/span>
+            &lt;button type="button" class="virtual-list-btn next-btn" data-ax-ref="nextBtn" style="cursor: pointer; padding: 4px 10px; font-size: 13px;">Next &amp;raquo;&lt;/button>
+          &lt;/div>
+        &lt;/div>
+      &lt;/div>
+      `,
+      {},
+      props
+    );
+
+    /** @type {number[]} Measured actual heights of individual items */
+    this.measuredHeights = [];
+    /** @type {HTMLTemplateElement|null} The template node extracted from slot transclusion */
+    this.templateNode = null;
+    /** @type {string} Loop item variable name (e.g. 'item') */
+    this.itemVar = 'item';
+    /** @type {ResizeObserver|null} Resize observer to monitor dynamic item size changes and viewport resizing */
+    this.resizeObserver = null;
+    /** @type {number} Cached viewport height to prevent redundant layout loops */
+    this.lastViewportHeight = 0;
+    /** @type {number|null} Animation frame request handle */
+    this.rafId = null;
+    /** @type {number|null} Animation frame request handle for scroll throttling */
+    this.scrollRafId = null;
+    /** @type {number} Currently active 1-based page index */
+    this.currentPage = Number(props.page || props['current-page'] || 1);
+
+    this.renderer = new TemplateRenderer();
+    this.patcher = new DomPatcher();
+
+    this.onScroll = this.onScroll.bind(this);
+  }
+
+  /**
+   * Lifecycle hook called after component is mounted.
+   * Sets up transcluded template slots, scroll listeners, and pagination handlers.
+   */
+  onMount() {
+    const transcluded = this._getTranscludedGroups();
+    const defaultNodes = (transcluded &amp;&amp; transcluded.default) || [];
+
+    // Extract template slot node from transcluded default contents
+    const templateEl = defaultNodes.find(
+      (node) => node.nodeType === 1 &amp;&amp; node.tagName.toLowerCase() === 'template'
+    );
+
+    if (templateEl) {
+      this.templateNode = templateEl;
+      this.itemVar = templateEl.getAttribute('data-ax-as') || 'item';
+    } else {
+      // Fallback: If no template is provided, use the first element node as row template
+      const itemEl = defaultNodes.find((node) => node.nodeType === 1);
+      if (itemEl) {
+        const temp = document.createElement('template');
+        temp.appendChild(itemEl.cloneNode(true));
+        this.templateNode = temp;
+      }
+    }
+
+    if (this.$refs.viewport) {
+      this.$refs.viewport.addEventListener('scroll', this.onScroll);
+    }
+
+    if (this.$refs.prevBtn) {
+      this.$refs.prevBtn.addEventListener('click', () => this.prevPage());
+    }
+
+    if (this.$refs.nextBtn) {
+      this.$refs.nextBtn.addEventListener('click', () => this.nextPage());
+    }
+
+    if (this.$refs.spacer) {
+      this.$refs.spacer.innerHTML = '';
+    }
+    this.measuredHeights = [];
+    this.initResizeObserver();
+    this.layout();
+  }
+
+  /**
+   * Navigates to a specific page when pagination is enabled.
+   * @param {number} targetPage - 1-based target page index.
+   */
+  goToPage(targetPage) {
+    const pageSize = Number(this.props.pageSize || this.props['page-size'] || 0);
+    if (pageSize &lt;= 0) return;
+
+    const allItems = this.props.items || [];
+    const totalItems =
+      this.props.totalItems !== undefined
+        ? Number(this.props.totalItems)
+        : this.props['total-items'] !== undefined
+          ? Number(this.props['total-items'])
+          : allItems.length;
+
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const page = Math.min(totalPages, Math.max(1, Math.floor(targetPage)));
+
+    if (this.currentPage !== page) {
+      this.currentPage = page;
+      if (this.$refs.viewport) {
+        this.$refs.viewport.scrollTop = 0;
+      }
+      const eventDetail = {
+        page,
+        pageSize,
+        totalPages,
+        totalItems,
+        startIndex: (page - 1) * pageSize,
+        endIndex: Math.min(totalItems, page * pageSize),
+      };
+      this.$emit('page-change', eventDetail);
+      this.$emit('pageChange', eventDetail);
+      this.layout();
+    }
+  }
+
+  /**
+   * Navigates to the next page.
+   */
+  nextPage() {
+    this.goToPage(this.currentPage + 1);
+  }
+
+  /**
+   * Navigates to the previous page.
+   */
+  prevPage() {
+    this.goToPage(this.currentPage - 1);
+  }
+
+  /**
+   * Initializes unified ResizeObserver for viewport container and row items.
+   */
+  initResizeObserver() {
+    if (this.resizeObserver || typeof ResizeObserver === 'undefined') return;
+
+    this.resizeObserver = new ResizeObserver((entries) => {
+      let layoutNeeded = false;
+      for (const entry of entries) {
+        if (this.$refs.viewport &amp;&amp; entry.target === this.$refs.viewport) {
+          const newHeight = entry.target.clientHeight;
+          if (newHeight !== this.lastViewportHeight) {
+            this.lastViewportHeight = newHeight;
+            layoutNeeded = true;
+          }
+        } else if (entry.target &amp;&amp; entry.target.hasAttribute &amp;&amp; entry.target.hasAttribute('data-index')) {
+          const indexAttr = entry.target.getAttribute('data-index');
+          if (indexAttr !== null) {
+            const idx = parseInt(indexAttr, 10);
+            const newHeight = entry.target.offsetHeight;
+            if (newHeight &amp;&amp; newHeight !== this.measuredHeights[idx]) {
+              this.measuredHeights[idx] = newHeight;
+              layoutNeeded = true;
+            }
+          }
+        }
+      }
+      if (layoutNeeded) {
+        this.scheduleLayout();
+      }
+    });
+
+    if (this.$refs.viewport) {
+      this.lastViewportHeight = this.$refs.viewport.clientHeight || 0;
+      this.resizeObserver.observe(this.$refs.viewport);
+    }
+  }
+
+  /**
+   * Schedules layout recalculation on the next animation frame to prevent layout thrashing.
+   */
+  scheduleLayout() {
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId);
+    }
+    this.rafId = requestAnimationFrame(() => {
+      this.rafId = null;
+      this.layout();
+    });
+  }
+
+  /**
+   * Lifecycle hook called after component updates.
+   * Re-evaluates virtualization layouts when properties (e.g. items, page) change.
+   */
+  onUpdate() {
+    const pageProp = this.props.page || this.props['current-page'];
+    if (pageProp !== undefined) {
+      this.currentPage = Number(pageProp);
+    }
+    this.layout();
+  }
+
+  /**
+   * Lifecycle hook called when component unmounts.
+   * Clean up event listeners and observers to prevent leaks.
+   */
+  onUnmount() {
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    if (this.scrollRafId) {
+      cancelAnimationFrame(this.scrollRafId);
+      this.scrollRafId = null;
+    }
+    if (this.$refs.viewport) {
+      this.$refs.viewport.removeEventListener('scroll', this.onScroll);
+    }
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+  }
+
+  /**
+   * Viewport scroll event handler.
+   * Throttles scroll processing via requestAnimationFrame to align rendering with the screen refresh rate.
+   */
+  onScroll() {
+    if (this.scrollRafId) return;
+
+    this.scrollRafId = requestAnimationFrame(() => {
+      this.scrollRafId = null;
+      this.layout();
+    });
+  }
+
+  /**
+   * Creates a fresh element structure from the template to populate recycled element pool.
+   * @returns {Element}
+   */
+  createItemElement() {
+    const templateHTML = this.templateNode.innerHTML.replace(/{%/g, '{{').replace(/%}/g, '}}');
+    const tempDiv = document.createElement('div');
+    const html = this.renderer.render(templateHTML, () => '').trim();
+    tempDiv.innerHTML = html;
+    let element = tempDiv.firstElementChild || document.createElement('div');
+    element = this.patcher.cleanElement(element);
+    return element;
+  }
+
+  /**
+   * Measures visible DOM nodes and updates layout variables (e.g., offsets/heights/scrollbars/pagination).
+   */
+  layout() {
+    if (!this.templateNode) return;
+
+    const allItems = this.props.items || [];
+    const pageSize = Number(this.props.pageSize || this.props['page-size'] || 0);
+    const defaultHeight = Number(this.props.itemHeight || this.props['item-height']) || 40;
+    const viewport = this.$refs.viewport;
+    const spacer = this.$refs.spacer;
+    const pagination = this.$refs.pagination;
+    const pageInfo = this.$refs.pageInfo;
+    const pageNum = this.$refs.pageNum;
+    const prevBtn = this.$refs.prevBtn;
+    const nextBtn = this.$refs.nextBtn;
+
+    if (!viewport || !spacer) return;
+
+    const totalItems =
+      this.props.totalItems !== undefined
+        ? Number(this.props.totalItems)
+        : this.props['total-items'] !== undefined
+          ? Number(this.props['total-items'])
+          : allItems.length;
+
+    let displayedItems = allItems;
+    let pageOffset = 0;
+
+    if (pageSize > 0) {
+      const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+      const pageProp = Number(this.props.page || this.props['current-page'] || this.currentPage || 1);
+      this.currentPage = Math.min(totalPages, Math.max(1, Math.floor(pageProp)));
+
+      if (allItems.length > pageSize) {
+        // Client-side pagination slicing
+        pageOffset = (this.currentPage - 1) * pageSize;
+        displayedItems = allItems.slice(pageOffset, pageOffset + pageSize);
+      } else {
+        // Server-side paginated items provided
+        displayedItems = allItems;
+        pageOffset = 0;
+      }
+
+      // Update Pagination Controls UI
+      const showControls =
+        this.props.showControls !== undefined
+          ? Boolean(this.props.showControls)
+          : this.props['show-controls'] !== undefined
+            ? Boolean(this.props['show-controls'])
+            : true;
+
+      if (pagination &amp;&amp; showControls) {
+        pagination.style.display = 'flex';
+        if (pageInfo) {
+          pageInfo.textContent = `Page ${this.currentPage} of ${totalPages} (${totalItems} items)`;
+        }
+        if (pageNum) {
+          pageNum.textContent = String(this.currentPage);
+        }
+        if (prevBtn) {
+          prevBtn.disabled = this.currentPage &lt;= 1;
+        }
+        if (nextBtn) {
+          nextBtn.disabled = this.currentPage >= totalPages;
+        }
+      } else if (pagination) {
+        pagination.style.display = 'none';
+      }
+    } else if (pagination) {
+      pagination.style.display = 'none';
+    }
+
+    const items = displayedItems;
+    const viewportHeight = viewport.clientHeight || 400;
+    this.lastViewportHeight = viewportHeight;
+    const scrollTop = viewport.scrollTop;
+
+    // 1. Calculate heights array
+    const heights = [];
+    for (let i = 0; i &lt; items.length; i++) {
+      const globalIdx = pageOffset + i;
+      heights.push(this.measuredHeights[globalIdx] !== undefined ? this.measuredHeights[globalIdx] : defaultHeight);
+    }
+
+    // 2. Cumulative heights for fast offset/index resolution
+    const cumHeights = [0];
+    for (let i = 0; i &lt; items.length; i++) {
+      cumHeights.push(cumHeights[i] + heights[i]);
+    }
+    const totalHeight = cumHeights[items.length];
+
+    // 3. Find visible item range with buffer
+    const buffer = 5;
+    let startIndex = 0;
+    while (startIndex &lt; items.length &amp;&amp; cumHeights[startIndex + 1] &lt;= scrollTop) {
+      startIndex++;
+    }
+    startIndex = Math.max(0, startIndex - buffer);
+
+    let endIndex = startIndex;
+    while (endIndex &lt; items.length &amp;&amp; cumHeights[endIndex] &lt; scrollTop + viewportHeight) {
+      endIndex++;
+    }
+    endIndex = Math.min(items.length, endIndex + buffer);
+
+    const visibleCount = endIndex - startIndex;
+
+    // 4. Update spacer paddings and min-height
+    const paddingTop = cumHeights[startIndex];
+    const paddingBottom = totalHeight - cumHeights[endIndex];
+
+    spacer.style.paddingTop = `${paddingTop}px`;
+    spacer.style.paddingBottom = `${paddingBottom}px`;
+    spacer.style.minHeight = `${totalHeight}px`;
+
+    // 5. Sync spacer's child node count with visibleCount to manage recycled elements pool
+    while (spacer.childNodes.length > visibleCount) {
+      const lastChild = spacer.lastChild;
+      if (this.resizeObserver &amp;&amp; lastChild.nodeType === 1) {
+        this.resizeObserver.unobserve(lastChild);
+      }
+      spacer.removeChild(lastChild);
+    }
+
+    while (spacer.childNodes.length &lt; visibleCount) {
+      const itemEl = this.createItemElement();
+      spacer.appendChild(itemEl);
+    }
+
+    // 6. Ensure unified ResizeObserver is initialized
+    this.initResizeObserver();
+
+    // 7. Dynamic patching and recycling of row elements
+    const templateHTML = this.templateNode.innerHTML.replace(/{%/g, '{{').replace(/%}/g, '}}');
+
+    for (let i = 0; i &lt; visibleCount; i++) {
+      const itemIndex = startIndex + i;
+      const globalIndex = pageOffset + itemIndex;
+      const item = items[itemIndex];
+      const domNode = spacer.childNodes[i];
+
+      domNode.setAttribute('data-index', String(globalIndex));
+
+      if (this.resizeObserver &amp;&amp; domNode.nodeType === 1) {
+        this.resizeObserver.observe(domNode);
+      }
+
+      // Resolver using parent context or component scope
+      const resolver = (expr) => {
+        const extraScope = {
+          [this.itemVar]: item,
+          index: globalIndex,
+        };
+        return this.$parent ? this.$parent._evaluate(expr, extraScope) : this._evaluate(expr, extraScope);
+      };
+
+      const renderedHTML = this.renderer.render(templateHTML, resolver).trim();
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = renderedHTML;
+      let newElement = tempDiv.firstElementChild;
+      if (newElement) {
+        newElement = this.patcher.cleanElement(newElement);
+        newElement.setAttribute('data-index', String(globalIndex));
+
+        this.patcher.patchElement(domNode, newElement, resolver, this.$app);
+      }
+    }
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 16 2026 00:11:20 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

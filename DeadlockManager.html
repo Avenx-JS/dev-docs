@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Source: lib/core/renderer/deferManager.js</title>
+    <title>JSDoc: Class: DeadlockManager</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,310 +17,967 @@
 
 <div id="main">
 
-    <h1 class="page-title">Source: lib/core/renderer/deferManager.js</h1>
+    <h1 class="page-title">Class: DeadlockManager</h1>
 
     
 
 
 
+
+<section>
+
+<header>
     
-    <section>
-        <article>
-            <pre class="prettyprint source linenums"><code>import { DomPatcher } from './domPatch.js';
+        <h2><span class="attribs"><span class="type-signature"></span></span>DeadlockManager<span class="signature">(evaluator, renderer, eventBinder<span class="signature-attributes">opt</span>, componentName<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h2>
+        
+            <div class="class-description"><p>Manages &lt;@deadlock&gt; reactive boundaries, containment checks, and error recovery fallbacks.</p></div>
+        
+    
+</header>
 
-/**
- * Manages deferred loading (&lt;@defer>) of DOM subtrees and component instances.
- */
-export class DeferManager {
-  /** @type {WeakSet&lt;Element>} */
-  #initialized = new WeakSet();
+<article>
+    <div class="container-overview">
+    
+        
 
-  /** @type {WeakSet&lt;Element>} */
-  #loaded = new WeakSet();
+    
+    <h2>Constructor</h2>
+    
 
-  /** @type {WeakMap&lt;Element, Function>} */
-  #cleanups = new WeakMap();
+    
+    <h4 class="name" id="DeadlockManager"><span class="type-signature"></span>new DeadlockManager<span class="signature">(evaluator, renderer, eventBinder<span class="signature-attributes">opt</span>, componentName<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+    
 
-  /**
-   * @param {DynamicEvaluator} evaluator - Expression evaluator.
-   * @param {TemplateRenderer} renderer - Template renderer.
-   * @param {EventBinder} [eventBinder] - Event binder.
-   * @param {string} [componentName] - Parent component name.
-   */
-  constructor(evaluator, renderer, eventBinder, componentName) {
-    this.evaluator = evaluator;
-    this.renderer = renderer;
-    this.eventBinder = eventBinder;
-    this.componentName = componentName || 'AnonymousComponent';
-    this.patcher = new DomPatcher();
-  }
+    
 
-  /**
-   * Checks if a container element has already loaded its deferred content.
-   * @param {Element} el
-   * @returns {boolean}
-   */
-  isLoaded(el) {
-    return this.#loaded.has(el);
-  }
 
-  /**
-   * Processes all [data-ax-defer] container elements within a root element.
-   * @param {Element} root - Root container or component element.
-   * @param {object} scope - Evaluation scope.
-   * @param {object} state - Component state.
-   */
-  process(root, scope, state) {
-    if (!root) return;
 
-    const containers = [];
-    if (root.matches &amp;&amp; root.matches('[data-ax-defer]')) {
-      containers.push(root);
-    }
-    if (root.querySelectorAll) {
-      root.querySelectorAll('[data-ax-defer]').forEach((el) => containers.push(el));
-    }
 
-    containers.forEach((container) => {
-      this.#processContainer(container, scope, state);
-    });
-  }
 
-  /**
-   * Processes an individual [data-ax-defer] container element.
-   * @param {Element} container
-   * @param {object} scope
-   * @param {object} state
-   * #private
-   */
-  #processContainer(container, scope, state) {
-    if (this.#loaded.has(container)) return;
 
-    // Initialize placeholder content if not done yet
-    if (!this.#initialized.has(container)) {
-      this.#initialized.add(container);
-      const placeholderTpl = container.querySelector('template[data-ax-defer-placeholder]');
-      if (placeholderTpl &amp;&amp; container.children.length === container.querySelectorAll('template').length) {
-        const placeholderContent = unescapeTemplate(placeholderTpl.innerHTML);
-        const renderedPlaceholder = this.renderer.render(placeholderContent, scope);
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = renderedPlaceholder;
-        while (tempDiv.firstChild) {
-          container.insertBefore(tempDiv.firstChild, placeholderTpl);
-        }
-      }
-    }
 
-    const whenAttr = (container.getAttribute('data-ax-defer-when') || 'idle').trim();
-    this.setupTrigger(container, whenAttr, scope, state);
-  }
 
-  /**
-   * Sets up trigger conditions based on whenAttr.
-   * @param {Element} container
-   * @param {string} whenAttr
-   * @param {object} scope
-   * @param {object} state
-   */
-  setupTrigger(container, whenAttr, scope, state) {
-    if (this.#loaded.has(container)) return;
 
-    const normalizedWhen = whenAttr.toLowerCase();
-    if (normalizedWhen === 'idle') {
-      this.#setupIdleTrigger(container, scope);
-    } else if (normalizedWhen === 'visible') {
-      this.#setupVisibleTrigger(container, scope);
-    } else if (normalizedWhen === 'interaction' || normalizedWhen === 'hover' || normalizedWhen === 'click') {
-      this.#setupInteractionTrigger(container, scope);
-    } else if (normalizedWhen.startsWith('timer(') || normalizedWhen.endsWith('ms')) {
-      this.#setupTimerTrigger(container, whenAttr, scope);
-    } else {
-      this.#setupExpressionTrigger(container, whenAttr, scope, state);
-    }
-  }
 
-  /**
-   * Triggers deferred loading on user interaction (click or mouseenter).
-   * @param {Element} container - Target container element.
-   * @param {object} scope - Evaluation scope.
-   */
-  #setupInteractionTrigger(container, scope) {
-    const handler = () => {
-      container.removeEventListener('click', handler);
-      container.removeEventListener('mouseenter', handler);
-      this.loadDeferredContent(container, scope);
-    };
-    container.addEventListener('click', handler);
-    container.addEventListener('mouseenter', handler);
-    this.registerCleanup(container, () => {
-      container.removeEventListener('click', handler);
-      container.removeEventListener('mouseenter', handler);
-    });
-  }
 
-  /**
-   * Triggers deferred loading after a timer delay in ms (e.g. timer(1000) or 1000ms).
-   * @param {Element} container - Target container element.
-   * @param {string} whenAttr - Raw trigger attribute value.
-   * @param {object} scope - Evaluation scope.
-   */
-  #setupTimerTrigger(container, whenAttr, scope) {
-    const match = whenAttr.match(/(\d+)/);
-    const delay = match ? parseInt(match[1], 10) : 1000;
-    const timer = setTimeout(() => {
-      this.loadDeferredContent(container, scope);
-    }, delay);
-    this.registerCleanup(container, () => clearTimeout(timer));
-  }
+    <h5>Parameters:</h5>
+    
 
-  /**
-   * Triggers deferred loading when a reactive condition expression evaluates to true.
-   * @param {Element} container - Target container element.
-   * @param {string} whenAttr - Expression string to evaluate.
-   * @param {object} scope - Evaluation scope.
-   * @param {object} state - Component state.
-   */
-  #setupExpressionTrigger(container, whenAttr, scope, state) {
-    try {
-      const evalScope = { state, ...scope };
-      const evalResult = this.evaluator
-        ? this.evaluator.evaluateExpression(whenAttr, evalScope, state)
-        : Boolean(state &amp;&amp; state[whenAttr]);
-      if (evalResult) {
-        this.loadDeferredContent(container, scope);
-      }
-    } catch {
-      // Evaluation failed, ignore
-    }
-  }
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
 
-  /**
-   * Triggers deferred loading during browser idle time (requestIdleCallback).
-   * @param {Element} container - Target container element.
-   * @param {object} scope - Evaluation scope.
-   */
-  #setupIdleTrigger(container, scope) {
-    if (typeof window !== 'undefined' &amp;&amp; 'requestIdleCallback' in window) {
-      const handle = window.requestIdleCallback(() => {
-        this.loadDeferredContent(container, scope);
-      });
-      this.registerCleanup(container, () => {
-        if ('cancelIdleCallback' in window) {
-          window.cancelIdleCallback(handle);
-        }
-      });
-    } else {
-      const timer = setTimeout(() => {
-        this.loadDeferredContent(container, scope);
-      }, 1);
-      this.registerCleanup(container, () => clearTimeout(timer));
-    }
-  }
+        <th>Type</th>
 
-  /**
-   * Triggers deferred loading when element becomes visible in viewport (IntersectionObserver).
-   * @param {Element} container - Target container element.
-   * @param {object} scope - Evaluation scope.
-   */
-  #setupVisibleTrigger(container, scope) {
-    if (typeof window !== 'undefined' &amp;&amp; 'IntersectionObserver' in window) {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              observer.disconnect();
-              this.loadDeferredContent(container, scope);
-            }
-          });
-        },
-        { threshold: 0.1 }
-      );
-      observer.observe(container);
-      this.registerCleanup(container, () => observer.disconnect());
-    } else {
-      // Fallback if IntersectionObserver is not available
-      this.loadDeferredContent(container, scope);
-    }
-  }
+        
+        <th>Attributes</th>
+        
 
-  /**
-   * Swaps placeholder with deferred content.
-   * @param {Element} container - Target container element.
-   * @param {object} scope - Evaluation scope.
-   */
-  loadDeferredContent(container, scope) {
-    if (this.#loaded.has(container)) return;
-    this.#loaded.add(container);
+        
 
-    // Run cleanup if any trigger listener was set
-    const cleanup = this.#cleanups.get(container);
-    if (cleanup) {
-      cleanup();
-      this.#cleanups.delete(container);
-    }
+        <th class="last">Description</th>
+    </tr>
+    </thead>
 
-    const contentTpl = container.querySelector('template[data-ax-defer-content]');
-    if (!contentTpl) return;
+    <tbody>
+    
 
-    const unescapedContent = unescapeTemplate(contentTpl.innerHTML);
-    const renderedHtml = this.renderer.render(unescapedContent, scope);
+        <tr>
+            
+                <td class="name"><code>evaluator</code></td>
+            
 
-    // Clear placeholder children (keep templates)
-    Array.from(container.childNodes).forEach((child) => {
-      if (child.nodeName !== 'TEMPLATE') {
-        if (this.eventBinder &amp;&amp; child.nodeType === 1) {
-          this.eventBinder.unbind(child);
-        }
-        container.removeChild(child);
-      }
-    });
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
 
-    // Mount newly rendered deferred content
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = renderedHtml;
 
-    const fragment = document.createDocumentFragment();
-    while (tempDiv.firstChild) {
-      fragment.appendChild(tempDiv.firstChild);
-    }
+            
+            </td>
 
-    container.insertBefore(fragment, contentTpl);
+            
+                <td class="attributes">
+                
 
-    // Bind events if eventBinder is available
-    if (this.eventBinder) {
-      this.eventBinder.bind(container, scope);
-    }
-  }
+                
 
-  /**
-   * Registers a cleanup function for a container.
-   * @param {Element} container
-   * @param {Function} cleanupFn
-   */
-  registerCleanup(container, cleanupFn) {
-    this.#cleanups.set(container, cleanupFn);
-  }
+                
+                </td>
+            
 
-  /**
-   * Destroys and cleans up all observers and listeners.
-   */
-  destroy() {
-    // Cleanup handlers
-  }
-}
+            
 
-/**
- * Restores escaped template expressions from {% %} back to {{ }}.
- * @param {string} html
- * @returns {string}
- */
-function unescapeTemplate(html) {
-  if (!html) return '';
-  return html.replace(/\{%/g, '{{').replace(/%\}/g, '}}');
-}
-</code></pre>
-        </article>
-    </section>
+            <td class="description last"><p>Expression evaluator.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>renderer</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Template renderer.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>eventBinder</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Event binder.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>componentName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Parent component name.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_renderer_deadlockManager.js.html">lib/core/renderer/deadlockManager.js</a>, <a href="lib_core_renderer_deadlockManager.js.html#line12">line 12</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    </div>
+
+    
+
+    
+
+    
+        <h3 class="subsection-title">Classes</h3>
+
+        <dl>
+            <dt><a href="DeadlockManager.html">DeadlockManager</a></dt>
+            <dd></dd>
+        </dl>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+        <h3 class="subsection-title">Methods</h3>
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="findBoundaries"><span class="type-signature"></span>findBoundaries<span class="signature">(root)</span><span class="type-signature"> &rarr; {Array.&lt;Element>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Finds all [data-ax-deadlock] boundary containers within a root element.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>root</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Element</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_renderer_deadlockManager.js.html">lib/core/renderer/deadlockManager.js</a>, <a href="lib_core_renderer_deadlockManager.js.html#line44">line 44</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;Element></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="isTripped"><span class="type-signature"></span>isTripped<span class="signature">(container)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Checks if a boundary is currently tripped.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>container</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Element</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The [data-ax-deadlock] element.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_renderer_deadlockManager.js.html">lib/core/renderer/deadlockManager.js</a>, <a href="lib_core_renderer_deadlockManager.js.html#line35">line 35</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">boolean</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="reset"><span class="type-signature"></span>reset<span class="signature">(container)</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Resets a tripped boundary so it can render normally again.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>container</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Element</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_renderer_deadlockManager.js.html">lib/core/renderer/deadlockManager.js</a>, <a href="lib_core_renderer_deadlockManager.js.html#line129">line 129</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="trip"><span class="type-signature"></span>trip<span class="signature">(container, error<span class="signature-attributes">opt</span>, scope<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Trips a deadlock boundary, unmounting its active child subtree and rendering fallback UI.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>container</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Element</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>The [data-ax-deadlock] element.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>error</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Error</span>
+|
+
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>The error or diagnostic details.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Evaluation scope.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_renderer_deadlockManager.js.html">lib/core/renderer/deadlockManager.js</a>, <a href="lib_core_renderer_deadlockManager.js.html#line62">line 62</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+    
+
+    
+
+    
+</article>
+
+</section>
 
 
 

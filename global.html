@@ -434,7 +434,7 @@ Global scopes outside this tracking collection are rejected with a sandbox excep
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line31">line 31</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line33">line 33</a>
     </li></ul></dd>
     
 
@@ -507,7 +507,7 @@ Placeholders are specified as {0}, {1}, etc. and replaced at formatting time.</p
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line103">line 103</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line107">line 107</a>
     </li></ul></dd>
     
 
@@ -1628,6 +1628,78 @@ Dispatches messages to console methods dynamically.</p>
 
         
             
+<h4 class="name" id="deadlockHandlers"><span class="type-signature">(constant) </span>deadlockHandlers<span class="type-signature"> :Set.&lt;function()></span></h4>
+
+
+
+
+<div class="description">
+    <p>Registered deadlock event callbacks.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Set.&lt;function()></span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line39">line 39</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
 <h4 class="name" id="depMap"><span class="type-signature">(constant) </span>depMap<span class="type-signature"> :WeakMap.&lt;object, Map.&lt;string, Set.&lt;<a href="AvenxWatcher.html">AvenxWatcher</a>>>></span></h4>
 
 
@@ -1762,6 +1834,150 @@ Dispatches messages to console methods dynamically.</p>
 
         
             
+<h4 class="name" id="executionHistory"><span class="type-signature">(constant) </span>executionHistory<span class="type-signature"> :Array.&lt;{id: any, name: string, job: function()}></span></h4>
+
+
+
+
+<div class="description">
+    <p>Ordered log of jobs executed during the current flush for deadlock cycle diagnosis.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Array.&lt;{id: any, name: string, job: function()}></span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line33">line 33</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="flushCycleCount"><span class="type-signature"></span>flushCycleCount<span class="type-signature"> :number</span></h4>
+
+
+
+
+<div class="description">
+    <p>Current flush iteration counter within the active microtask.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">number</span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line20">line 20</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
 <h4 class="name" id="gray"><span class="type-signature">(constant) </span>gray<span class="type-signature"></span></h4>
 
 
@@ -1869,6 +2085,152 @@ Dispatches messages to console methods dynamically.</p>
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
         <a href="bin_colors.js.html">bin/colors.js</a>, <a href="bin_colors.js.html#line92">line 92</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="jobExecutionCounts"><span class="type-signature">(constant) </span>jobExecutionCounts<span class="type-signature"> :Map.&lt;any, number></span></h4>
+
+
+
+
+<div class="description">
+    <p>Execution count of individual jobs in the current flush cycle.
+Keyed by job or job.id.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Map.&lt;any, number></span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line27">line 27</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="maxFlushCount"><span class="type-signature"></span>maxFlushCount<span class="type-signature"> :number</span></h4>
+
+
+
+
+<div class="description">
+    <p>Maximum recursive flush depth allowed before triggering reactive deadlock abort.
+Defaults to 25 to accommodate deep legitimate multi-pass updates while stopping infinite cycles.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">number</span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line14">line 14</a>
     </li></ul></dd>
     
 
@@ -4337,6 +4699,94 @@ effective class list is unchanged.</p>
     
 
     
+    <h4 class="name" id="clearCausationTrace"><span class="type-signature"></span>clearCausationTrace<span class="signature">()</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Clears the causation trace log.</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_watcher.js.html">lib/core/reactive/watcher.js</a>, <a href="lib_core_reactive_watcher.js.html#line164">line 164</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="collectUnknownKeys"><span class="type-signature"></span>collectUnknownKeys<span class="signature">(obj, allowed, prefix)</span><span class="type-signature"> &rarr; {Array.&lt;string>}</span></h4>
     
 
@@ -4967,7 +5417,7 @@ that DomPatcher must always be able to patch (see issue #200).</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2016">line 2016</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2081">line 2081</a>
     </li></ul></dd>
     
 
@@ -7365,6 +7815,165 @@ Preserves interactive object logs by prepending to string or prepending as separ
     
 
     
+    <h4 class="name" id="extractCycleChain"><span class="type-signature"></span>extractCycleChain<span class="signature">(recurringId)</span><span class="type-signature"> &rarr; {string}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Reconstructs the circular dependency chain from the execution history.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>recurringId</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">any</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The job ID that repeated excessively.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line125">line 125</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>Formatted cycle string (e.g. &quot;Counter -&gt; Stats -&gt; Counter&quot;).</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="extractLintableTemplate"><span class="type-signature"></span>extractLintableTemplate<span class="signature">(source)</span><span class="type-signature"> &rarr; {string}</span></h4>
     
 
@@ -8963,7 +9572,7 @@ After jobs are flushed, all queued flush callbacks (e.g. nextTick) are executed.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line48">line 48</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line187">line 187</a>
     </li></ul></dd>
     
 
@@ -9852,7 +10461,7 @@ After jobs are flushed, all queued flush callbacks (e.g. nextTick) are executed.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line224">line 224</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line231">line 231</a>
     </li></ul></dd>
     
 
@@ -11822,6 +12431,112 @@ After jobs are flushed, all queued flush callbacks (e.g. nextTick) are executed.
     
 
     
+    <h4 class="name" id="getActiveCausationTrace"><span class="type-signature"></span>getActiveCausationTrace<span class="signature">()</span><span class="type-signature"> &rarr; {Array.&lt;string>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Returns the current active causation trace for diagnostics.</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_watcher.js.html">lib/core/reactive/watcher.js</a>, <a href="lib_core_reactive_watcher.js.html#line157">line 157</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;string></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="getAllFiles"><span class="type-signature"></span>getAllFiles<span class="signature">(dir)</span><span class="type-signature"> &rarr; {Array.&lt;string>}</span></h4>
     
 
@@ -13566,7 +14281,7 @@ file, e.g.:</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1803">line 1803</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1868">line 1868</a>
     </li></ul></dd>
     
 
@@ -14266,6 +14981,112 @@ file, e.g.:</p>
     
 
     
+    <h4 class="name" id="getSchedulerMaxFlushCount"><span class="type-signature"></span>getSchedulerMaxFlushCount<span class="signature">()</span><span class="type-signature"> &rarr; {number}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Returns the currently configured maximum flush cycle count.</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line55">line 55</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">number</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="getSequence"><span class="type-signature"></span>getSequence<span class="signature">(arr)</span><span class="type-signature"> &rarr; {Array.&lt;number>}</span></h4>
     
 
@@ -14692,6 +15513,155 @@ Uses binary search + parent tracking for O(N log N) complexity.</p>
     
 
     
+    <h4 class="name" id="handleDeadlock"><span class="type-signature"></span>handleDeadlock<span class="signature">(triggeringJobId<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Handles a detected reactive deadlock: logs diagnostics, notifies handlers, and purges the queue.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>triggeringJobId</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">any</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>The job ID that triggered the cycle.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line150">line 150</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="has"><span class="type-signature"></span>has<span class="signature">(slotName<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
     
 
@@ -14801,7 +15771,7 @@ Uses binary search + parent tracking for O(N log N) complexity.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxComponent.js.html">lib/core/runtime/AvenxComponent.js</a>, <a href="lib_core_runtime_AvenxComponent.js.html#line488">line 488</a>
+        <a href="lib_core_runtime_AvenxComponent.js.html">lib/core/runtime/AvenxComponent.js</a>, <a href="lib_core_runtime_AvenxComponent.js.html#line526">line 526</a>
     </li></ul></dd>
     
 
@@ -17132,7 +18102,7 @@ instances that may contain private fields or internal slots.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2031">line 2031</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2096">line 2096</a>
     </li></ul></dd>
     
 
@@ -18782,7 +19752,7 @@ jobs in the scheduler queue have finished flushing.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line90">line 90</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line265">line 265</a>
     </li></ul></dd>
     
 
@@ -18826,6 +19796,165 @@ jobs in the scheduler queue have finished flushing.</p>
 |
 
 <span class="param-type">void</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="onSchedulerDeadlock"><span class="type-signature"></span>onSchedulerDeadlock<span class="signature">(handler)</span><span class="type-signature"> &rarr; {function}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Registers a global callback for scheduler deadlock events.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>handler</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line64">line 64</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>Unsubscribe function.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">function</span>
 
 
     </dd>
@@ -19093,7 +20222,7 @@ boolean-attribute handling already expects, rather than <code>null</code>).</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1720">line 1720</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1785">line 1785</a>
     </li></ul></dd>
     
 
@@ -19632,7 +20761,7 @@ Matches dotenv behavior including single/double quotes and inline comments.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1822">line 1822</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1887">line 1887</a>
     </li></ul></dd>
     
 
@@ -21194,7 +22323,7 @@ Converts data-ax-bind=&quot;expr&quot; to value=&quot;{{ expr }}&quot; and event
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line33">line 33</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line111">line 111</a>
     </li></ul></dd>
     
 
@@ -21331,7 +22460,7 @@ Converts data-ax-bind=&quot;expr&quot; to value=&quot;{{ expr }}&quot; and event
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line23">line 23</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line101">line 101</a>
     </li></ul></dd>
     
 
@@ -21469,7 +22598,7 @@ Deduplicates multiple calls to the same job.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line12">line 12</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line90">line 90</a>
     </li></ul></dd>
     
 
@@ -22381,6 +23510,94 @@ with their stringified values from process.env.</p>
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
         <a href="lib_compiler_utils_warningReporter.js.html">lib/compiler/utils/warningReporter.js</a>, <a href="lib_compiler_utils_warningReporter.js.html#line12">line 12</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="resetScheduler"><span class="type-signature"></span>resetScheduler<span class="signature">()</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Resets the scheduler state (primarily used in testing).</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line75">line 75</a>
     </li></ul></dd>
     
 
@@ -24338,7 +25555,7 @@ tag round-trips consistently.</p></td>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1980">line 1980</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2045">line 2045</a>
     </li></ul></dd>
     
 
@@ -25320,6 +26537,143 @@ Call without arguments to re-run the automatic detection.</p>
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
         <a href="lib_core_reactive_watcher.js.html">lib/core/reactive/watcher.js</a>, <a href="lib_core_reactive_watcher.js.html#line52">line 52</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="setSchedulerMaxFlushCount"><span class="type-signature"></span>setSchedulerMaxFlushCount<span class="signature">(count)</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Configures the maximum allowed flush cycle count.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>count</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Maximum flush iterations.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line45">line 45</a>
     </li></ul></dd>
     
 
@@ -26782,7 +28136,7 @@ into standard scoped selectors by removing the deep pseudo-selector wrappers/key
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_watcher.js.html">lib/core/reactive/watcher.js</a>, <a href="lib_core_reactive_watcher.js.html#line209">line 209</a>
+        <a href="lib_core_reactive_watcher.js.html">lib/core/reactive/watcher.js</a>, <a href="lib_core_reactive_watcher.js.html#line269">line 269</a>
     </li></ul></dd>
     
 
@@ -27026,7 +28380,7 @@ into standard scoped selectors by removing the deep pseudo-selector wrappers/key
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_watcher.js.html">lib/core/reactive/watcher.js</a>, <a href="lib_core_reactive_watcher.js.html#line154">line 154</a>
+        <a href="lib_core_reactive_watcher.js.html">lib/core/reactive/watcher.js</a>, <a href="lib_core_reactive_watcher.js.html#line175">line 175</a>
     </li></ul></dd>
     
 
@@ -29334,6 +30688,52 @@ and un-proxies arguments/context when called.</p>
         </tr>
 
     
+
+        <tr>
+            
+                <td class="name"><code>REACTIVE_DEADLOCK_DETECTED</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_R18: Circular reactive update chain or deadlock detected.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_DEADLOCK_PARSE_FAILED</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_W35: Failed to parse &lt;@deadlock&gt; tags or attributes in template.</p></td>
+        </tr>
+
+    
     </tbody>
 </table>
 
@@ -29888,13 +31288,13 @@ and un-proxies arguments/context when called.</p>
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#IMPURE_PATTERNS">IMPURE_PATTERNS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#NON_DETERMINISTIC_PATTERNS">NON_DETERMINISTIC_PATTERNS</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#IMPURE_PATTERNS">IMPURE_PATTERNS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#NON_DETERMINISTIC_PATTERNS">NON_DETERMINISTIC_PATTERNS</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushCycleCount">flushCycleCount</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue Aug 18 2026 17:16:42 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue Aug 18 2026 19:38:59 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

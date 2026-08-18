@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Source: bin/commands/destroy.js</title>
+    <title>JSDoc: Source: lib/compiler/ContractValidator.js</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Source: bin/commands/destroy.js</h1>
+    <h1 class="page-title">Source: lib/compiler/ContractValidator.js</h1>
 
     
 
@@ -26,236 +26,386 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>import fs from 'fs';
-import path from 'path';
-import { parseName, fail } from '../utils.js';
-import { cyan, gray, green } from '../colors.js';
+            <pre class="prettyprint source linenums"><code>import { AvenxErrorCodes } from '../core/runtime/AvenxError.js';
+import { TemplateValidationError } from './errors/TemplateValidationError.js';
+import { reportWarning } from './utils/warningReporter.js';
 
 /**
- * Automatically removes imports, registrations, and mount statements for a class from src/main.app.js.
- * @param {object} cli
- * @param {string} className
- * @param {string} folderName
+ * Known non-deterministic identifiers and expressions.
  */
-export function unregisterFromMainApp(cli, className, folderName) {
-  const mainPath = path.join(cli.baseDir, cli.config.srcDir, 'main.app.js');
-  if (!fs.existsSync(mainPath)) return;
+const NON_DETERMINISTIC_PATTERNS = [
+  /\bMath\.random\s*\(/,
+  /\bDate\.now\s*\(/,
+  /\bnew\s+Date\s*\(/,
+  /\bDate\s*\(/,
+  /\bperformance\.now\s*\(/,
+  /\bcrypto\.getRandomValues\s*\(/,
+  /\bcrypto\.randomUUID\s*\(/,
+];
 
-  const content = fs.readFileSync(mainPath, 'utf-8');
+/**
+ * Known side-effecting / impure patterns in expressions.
+ */
+const IMPURE_PATTERNS = [
+  /\bwindow\s*\./,
+  /\bdocument\s*\./,
+  /\blocalStorage\s*\./,
+  /\bsessionStorage\s*\./,
+  /\bfetch\s*\(/,
+  /\bXMLHttpRequest\b/,
+  /\bnavigator\.sendBeacon\s*\(/,
+  /(?&lt;![!=>&lt;])=(?![=>&lt;])/, // assignment = (excluding ==, ===, !=, !==, &lt;=, >=, =>)
+  /\+\+/,
+  /--/,
+  /\+=|-=|\*=\/=/
+];
 
-  // Remove import statements
-  const importRegex = new RegExp(
-    `^import\\s+(?:${className}|\\{\\s*${className}\\s*\\})\\s+from\\s+['"].*?${folderName}.*?['"];?\\r?\\n?`,
-    'm',
-  );
-  const generalImportRegex = new RegExp(
-    `^import\\s+(?:${className}|\\{\\s*${className}\\s*\\})\\s+from\\s+['"].*?['"];?\\r?\\n?`,
-    'm',
-  );
+/**
+ * Isolation violation patterns (accessing ambient global bridges or parent scope).
+ */
+const ISOLATION_VIOLATION_PATTERNS = [
+  /\$bridges\b/,
+  /\bthis\.\$bridges\b/,
+  /\$parent\b/,
+  /\bthis\.\$parent\b/,
+];
 
-  // Remove app.register calls
-  const registerRegex = new RegExp(
-    `^\\s*app\\.register\\(\\s*['"]${className}['"]\\s*,\\s*${className}\\s*\\);?\\r?\\n?`,
-    'm',
-  );
+/**
+ * ContractValidator validates semantic guarantees declared via compiler contracts:
+ * - 'static': output never changes; zero dynamic interpolations or reactive bindings.
+ * - 'pure': zero observable side-effects during evaluation.
+ * - 'deterministic': identical inputs yield identical output; no Math.random/Date.now.
+ * - 'isolated': strict dependency boundary; depends only on props/local state, no $bridges/$parent.
+ */
+export class ContractValidator {
+  /**
+   * Validates all declared contracts on a component and its template AST.
+   * @param {object[]} nodes - Root AST nodes of template.
+   * @param {object} metadata - Component metadata.
+   * @param {string} [metadata.name] - Component name.
+   * @param {string} [metadata.filePath] - Absolute path to component file.
+   * @param {Set&lt;string>} [metadata.contracts] - Component-level contracts.
+   * @param {object} [metadata.state] - State object.
+   * @param {object} [metadata.computed] - Computed property expressions.
+   * @param {object} [metadata.methods] - Action method bodies.
+   * @param {object} [metadata.resources] - Resources.
+   * @param {object} [metadata.config] - Compiler config.
+   * @returns {object} Validation result { valid: boolean, errors: Error[], warnings: Error[] }
+   */
+  static validate(nodes, metadata = {}) {
+    const errors = [];
+    const warnings = [];
+    const componentContracts = metadata.contracts || new Set();
+    const config = metadata.config || null;
+    const filePath = metadata.filePath || '';
 
-  // Remove app.mount calls and their commented versions
-  const mountRegex = new RegExp(`^\\s*(?://\\s*)?app\\.mount\\(\\s*['"]${className}['"]\\s*\\);?\\r?\\n?`, 'm');
-  const commentedMountRegex = new RegExp(
-    `^\\s*(?://\\s*)?app\\.mount\\(\\s*['"]${className}['"]\\s*\\);?\\s*//\\s*Uncomment\\s+to\\s+mount\\s+this\\s+component\\r?\\n?`,
-    'm',
-  );
+    // 1. Component-level validation for script elements (&lt;computed>, &lt;action>)
+    if (componentContracts.has('isolated')) {
+      ContractValidator.checkIsolationInScript(metadata, errors, filePath);
+    }
+    if (componentContracts.has('pure')) {
+      ContractValidator.checkPurityInScript(metadata, warnings, filePath, config);
+    }
+    if (componentContracts.has('deterministic')) {
+      ContractValidator.checkDeterminismInScript(metadata, warnings, filePath, config);
+    }
 
-  let newContent = content
-    .replace(commentedMountRegex, '')
-    .replace(mountRegex, '')
-    .replace(registerRegex, '')
-    .replace(importRegex, '');
+    // 2. Validate template AST
+    const inheritedContracts = new Set(componentContracts);
+    for (const node of nodes) {
+      ContractValidator.validateNode(node, inheritedContracts, metadata, errors, warnings);
+    }
 
-  if (newContent === content) {
-    newContent = content
-      .replace(commentedMountRegex, '')
-      .replace(mountRegex, '')
-      .replace(registerRegex, '')
-      .replace(generalImportRegex, '');
-  } else {
-    newContent = newContent.replace(generalImportRegex, '');
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
   }
 
-  // Clean up extra consecutive newlines
-  newContent = newContent.replace(/\n{3,}/g, '\n\n');
+  /**
+   * Validates script-level methods and computed properties for isolation leaks.
+   * @param {object} metadata
+   * @param {Error[]} errors
+   * @param {string} filePath
+   * @private
+   */
+  static checkIsolationInScript(metadata, errors, filePath) {
+    const checkSource = (src, label) => {
+      if (!src || typeof src !== 'string') return;
+      for (const pattern of ISOLATION_VIOLATION_PATTERNS) {
+        const match = src.match(pattern);
+        if (match) {
+          const err = new TemplateValidationError(
+            AvenxErrorCodes.COMPILER_CONTRACT_ISOLATED_VIOLATION,
+            metadata.name || 'Component',
+            `${label} references "${match[0]}"`
+          );
+          if (filePath) err.filename = filePath;
+          errors.push(err);
+        }
+      }
+    };
 
-  if (content !== newContent) {
-    fs.writeFileSync(mainPath, newContent);
-    console.log(green(`✅ Cleaned up imports and registrations for '${className}' in ${cli.config.srcDir}/main.app.js`));
+    if (metadata.computed) {
+      for (const [key, expr] of Object.entries(metadata.computed)) {
+        checkSource(expr, `computed property "${key}"`);
+      }
+    }
+    if (metadata.methods) {
+      for (const [key, body] of Object.entries(metadata.methods)) {
+        checkSource(body, `action method "${key}"`);
+      }
+    }
+  }
+
+  /**
+   * Validates script-level methods and computed properties for purity violations.
+   * @param {object} metadata
+   * @param {Error[]} warnings
+   * @param {string} filePath
+   * @param {object} config
+   * @private
+   */
+  static checkPurityInScript(metadata, warnings, filePath, config) {
+    const checkSource = (src, label) => {
+      if (!src || typeof src !== 'string') return;
+      for (const pattern of IMPURE_PATTERNS) {
+        const match = src.match(pattern);
+        if (match) {
+          const err = new TemplateValidationError(
+            AvenxErrorCodes.COMPILER_CONTRACT_PURE_VIOLATION,
+            metadata.name || 'Component',
+            `${label} contains side-effect "${match[0]}"`
+          );
+          if (filePath) err.filename = filePath;
+          warnings.push(err);
+          reportWarning(AvenxErrorCodes.COMPILER_CONTRACT_PURE_VIOLATION, err, config);
+        }
+      }
+    };
+
+    if (metadata.computed) {
+      for (const [key, expr] of Object.entries(metadata.computed)) {
+        checkSource(expr, `computed property "${key}"`);
+      }
+    }
+  }
+
+  /**
+   * Validates script-level methods and computed properties for determinism violations.
+   * @param {object} metadata
+   * @param {Error[]} warnings
+   * @param {string} filePath
+   * @param {object} config
+   * @private
+   */
+  static checkDeterminismInScript(metadata, warnings, filePath, config) {
+    const checkSource = (src, label) => {
+      if (!src || typeof src !== 'string') return;
+      for (const pattern of NON_DETERMINISTIC_PATTERNS) {
+        const match = src.match(pattern);
+        if (match) {
+          const err = new TemplateValidationError(
+            AvenxErrorCodes.COMPILER_CONTRACT_DETERMINISTIC_VIOLATION,
+            metadata.name || 'Component',
+            `${label} contains non-deterministic call "${match[0]}"`
+          );
+          if (filePath) err.filename = filePath;
+          warnings.push(err);
+          reportWarning(AvenxErrorCodes.COMPILER_CONTRACT_DETERMINISTIC_VIOLATION, err, config);
+        }
+      }
+    };
+
+    if (metadata.computed) {
+      for (const [key, expr] of Object.entries(metadata.computed)) {
+        checkSource(expr, `computed property "${key}"`);
+      }
+    }
+  }
+
+  /**
+   * Recursively validates an AST node against active and inherited contracts.
+   * @param {object} node
+   * @param {Set&lt;string>} inheritedContracts
+   * @param {object} metadata
+   * @param {Error[]} errors
+   * @param {Error[]} warnings
+   * @private
+   */
+  static validateNode(node, inheritedContracts, metadata, errors, warnings) {
+    const activeContracts = new Set([...inheritedContracts, ...(node.contracts || [])]);
+    const config = metadata.config || null;
+    const filePath = metadata.filePath || '';
+
+    // Check redundancy: if parent is static, child tagging static/pure/deterministic is redundant
+    if (inheritedContracts.has('static') &amp;&amp; node.contracts &amp;&amp; node.contracts.size > 0) {
+      for (const c of node.contracts) {
+        const warn = new TemplateValidationError(
+          AvenxErrorCodes.COMPILER_CONTRACT_REDUNDANT,
+          c,
+          `&lt;${node.tagName}>`,
+          'static'
+        );
+        if (filePath) warn.filename = filePath;
+        warnings.push(warn);
+        reportWarning(AvenxErrorCodes.COMPILER_CONTRACT_REDUNDANT, warn, config);
+      }
+    }
+
+    // 1. Check 'static' contract violations
+    if (activeContracts.has('static')) {
+      if (node.type === 'text') {
+        if (node.content.includes('{{') || node.content.includes('{%')) {
+          const err = new TemplateValidationError(
+            AvenxErrorCodes.COMPILER_CONTRACT_STATIC_VIOLATION,
+            node.content.trim()
+          );
+          if (filePath) err.filename = filePath;
+          errors.push(err);
+        }
+      } else if (node.type === 'element') {
+        const lowerTag = node.tagName.toLowerCase();
+        if (lowerTag === 'slot') {
+          const err = new TemplateValidationError(
+            AvenxErrorCodes.COMPILER_CONTRACT_STATIC_VIOLATION,
+            '&lt;slot> in static context'
+          );
+          if (filePath) err.filename = filePath;
+          errors.push(err);
+        }
+
+        for (const [attrName, attrVal] of Object.entries(node.attrs || {})) {
+          if (attrName.startsWith('@')) {
+            const err = new TemplateValidationError(
+              AvenxErrorCodes.COMPILER_CONTRACT_STATIC_VIOLATION,
+              `event listener "${attrName}"`
+            );
+            if (filePath) err.filename = filePath;
+            errors.push(err);
+          } else if (attrName.startsWith('data-ax-bind')) {
+            const err = new TemplateValidationError(
+              AvenxErrorCodes.COMPILER_CONTRACT_STATIC_VIOLATION,
+              `two-way binding "${attrName}"`
+            );
+            if (filePath) err.filename = filePath;
+            errors.push(err);
+          } else if (attrName.startsWith(':[')) {
+            const err = new TemplateValidationError(
+              AvenxErrorCodes.COMPILER_CONTRACT_STATIC_VIOLATION,
+              `dynamic attribute name "${attrName}"`
+            );
+            if (filePath) err.filename = filePath;
+            errors.push(err);
+          } else if (attrVal &amp;&amp; (attrVal.includes('{{') || attrVal.includes('{%'))) {
+            const err = new TemplateValidationError(
+              AvenxErrorCodes.COMPILER_CONTRACT_STATIC_VIOLATION,
+              `${attrName}="${attrVal}"`
+            );
+            if (filePath) err.filename = filePath;
+            errors.push(err);
+          }
+        }
+      }
+    }
+
+    // 2. Check 'isolated' contract violations in template
+    if (activeContracts.has('isolated')) {
+      const checkTextForIsolation = (text) => {
+        if (!text) return;
+        for (const pattern of ISOLATION_VIOLATION_PATTERNS) {
+          const match = text.match(pattern);
+          if (match) {
+            const err = new TemplateValidationError(
+              AvenxErrorCodes.COMPILER_CONTRACT_ISOLATED_VIOLATION,
+              metadata.name || 'Component',
+              `template expression contains "${match[0]}"`
+            );
+            if (filePath) err.filename = filePath;
+            errors.push(err);
+          }
+        }
+      };
+
+      if (node.type === 'text') {
+        checkTextForIsolation(node.content);
+      } else if (node.type === 'element') {
+        for (const [name, val] of Object.entries(node.attrs || {})) {
+          checkTextForIsolation(name);
+          checkTextForIsolation(val);
+        }
+      }
+    }
+
+    // 3. Check 'deterministic' contract violations in template
+    if (activeContracts.has('deterministic')) {
+      const checkTextForDeterminism = (text) => {
+        if (!text || (!text.includes('{{') &amp;&amp; !text.includes('{%') &amp;&amp; !text.includes('@'))) return;
+        for (const pattern of NON_DETERMINISTIC_PATTERNS) {
+          const match = text.match(pattern);
+          if (match) {
+            const warn = new TemplateValidationError(
+              AvenxErrorCodes.COMPILER_CONTRACT_DETERMINISTIC_VIOLATION,
+              metadata.name || 'Component',
+              `template expression contains non-deterministic "${match[0]}"`
+            );
+            if (filePath) warn.filename = filePath;
+            warnings.push(warn);
+            reportWarning(AvenxErrorCodes.COMPILER_CONTRACT_DETERMINISTIC_VIOLATION, warn, config);
+          }
+        }
+      };
+
+      if (node.type === 'text') {
+        checkTextForDeterminism(node.content);
+      } else if (node.type === 'element') {
+        for (const val of Object.values(node.attrs || {})) {
+          checkTextForDeterminism(val);
+        }
+      }
+    }
+
+    // 4. Check 'pure' contract violations in template
+    if (activeContracts.has('pure')) {
+      const checkTextForPurity = (text) => {
+        if (!text || (!text.includes('{{') &amp;&amp; !text.includes('{%'))) return;
+        for (const pattern of IMPURE_PATTERNS) {
+          const match = text.match(pattern);
+          if (match) {
+            const warn = new TemplateValidationError(
+              AvenxErrorCodes.COMPILER_CONTRACT_PURE_VIOLATION,
+              metadata.name || 'Component',
+              `template expression contains side-effect "${match[0]}"`
+            );
+            if (filePath) warn.filename = filePath;
+            warnings.push(warn);
+            reportWarning(AvenxErrorCodes.COMPILER_CONTRACT_PURE_VIOLATION, warn, config);
+          }
+        }
+      };
+
+      if (node.type === 'text') {
+        checkTextForPurity(node.content);
+      } else if (node.type === 'element') {
+        for (const [name, val] of Object.entries(node.attrs || {})) {
+          if (!name.startsWith('@')) {
+            checkTextForPurity(val);
+          }
+        }
+      }
+    }
+
+    // Recurse children
+    if (node.children &amp;&amp; node.children.length > 0) {
+      for (const child of node.children) {
+        ContractValidator.validateNode(child, activeContracts, metadata, errors, warnings);
+      }
+    }
   }
 }
 
-/**
- * Destroys a component folder and template files, and unregisters it from main.app.js.
- * @param {object} cli
- * @param {string} name
- * @param {boolean} [dryRun]
- */
-export function destroyComponent(cli, name, dryRun = false) {
-  if (!name) {
-    fail('Please provide a component name (e.g., avenx d my-component)');
-    return;
-  }
-
-  const { capitalizedName, folderFileName: lowerName } = parseName(name);
-  const compDir = path.join(cli.baseDir, cli.config.srcDir, 'components', lowerName);
-
-  if (dryRun) {
-    console.log(cyan(`🧪 [Dry Run] Component '${lowerName}' files would be deleted:`));
-    console.log(gray(`[DRY-RUN] Would delete: ${cli.config.srcDir}/components/${lowerName}/${lowerName}.component.js`));
-    console.log(
-      gray(`[DRY-RUN] Would delete: ${cli.config.srcDir}/components/${lowerName}/${lowerName}.component.css`),
-    );
-    console.log(gray(`[DRY-RUN] Would delete: ${cli.config.srcDir}/components/${lowerName}/`));
-    console.log(
-      cyan(`🧪 [Dry Run] ${cli.config.srcDir}/main.app.js would be updated to remove registrations/imports for '${capitalizedName}'.`),
-    );
-    console.log(cyan('🧪 [Dry Run] No files were deleted or modified.'));
-    return;
-  }
-
-  if (fs.existsSync(compDir)) {
-    fs.rmSync(compDir, { recursive: true, force: true });
-    console.log(green(`✅ Component '${lowerName}' directory deleted at ${cli.config.srcDir}/components/${lowerName}/`));
-  } else {
-    console.log(gray(`ℹ️ Component '${lowerName}' directory was not found.`));
-  }
-
-  unregisterFromMainApp(cli, capitalizedName, lowerName);
-}
-
-/**
- * Destroys a page class and template files, and unregisters it from main.app.js.
- * @param {object} cli
- * @param {string} name
- * @param {boolean} [dryRun]
- */
-export function destroyPage(cli, name, dryRun = false) {
-  if (!name) {
-    fail('Please provide a page name (e.g., avenx d page home)');
-    return;
-  }
-
-  const { capitalizedName, folderFileName: lowerName } = parseName(name);
-  const pageDir = path.join(cli.baseDir, cli.config.srcDir, 'pages');
-  const jsPath = path.join(pageDir, `${lowerName}.page.js`);
-  const cssPath = path.join(pageDir, `${lowerName}.page.css`);
-
-  if (dryRun) {
-    console.log(cyan(`🧪 [Dry Run] Page '${lowerName}' files would be deleted:`));
-    console.log(gray(`[DRY-RUN] Would delete: ${cli.config.srcDir}/pages/${lowerName}.page.js`));
-    console.log(gray(`[DRY-RUN] Would delete: ${cli.config.srcDir}/pages/${lowerName}.page.css`));
-    console.log(
-      cyan(`🧪 [Dry Run] ${cli.config.srcDir}/main.app.js would be updated to remove imports/registrations/routes for '${capitalizedName}'.`),
-    );
-    console.log(cyan('🧪 [Dry Run] No files were deleted or modified.'));
-    return;
-  }
-
-  let deletedAny = false;
-  if (fs.existsSync(jsPath)) {
-    fs.rmSync(jsPath, { force: true });
-    console.log(`  Deleted: ${cli.config.srcDir}/pages/${lowerName}.page.js`);
-    deletedAny = true;
-  }
-  if (fs.existsSync(cssPath)) {
-    fs.rmSync(cssPath, { force: true });
-    console.log(`  Deleted: ${cli.config.srcDir}/pages/${lowerName}.page.css`);
-    deletedAny = true;
-  }
-
-  if (deletedAny) {
-    console.log(green(`✅ Page '${capitalizedName}' files deleted.`));
-  } else {
-    console.log(gray(`ℹ️ Page '${capitalizedName}' files were not found.`));
-  }
-
-  unregisterFromMainApp(cli, capitalizedName, lowerName);
-}
-
-/**
- * Destroys a Bridge class file.
- * @param {object} cli
- * @param {string} name
- * @param {boolean} [dryRun]
- */
-export function destroyBridge(cli, name, dryRun = false) {
-  if (!name) {
-    fail('Please provide a bridge name (e.g., avenx d bridge auth)');
-    return;
-  }
-
-  const { capitalizedName: baseName, folderFileName: lowerName } = parseName(name);
-  const capitalizedName = baseName + 'Bridge';
-  const globalDir = path.join(cli.baseDir, cli.config.srcDir, 'global');
-  const bridgePath = path.join(globalDir, `${lowerName}.bridge.js`);
-
-  if (dryRun) {
-    console.log(cyan(`🧪 [Dry Run] Bridge '${capitalizedName}' file would be deleted:`));
-    console.log(gray(`[DRY-RUN] Would delete: ${cli.config.srcDir}/global/${lowerName}.bridge.js`));
-    console.log(
-      cyan(`🧪 [Dry Run] ${cli.config.srcDir}/main.app.js would be updated to remove imports/registrations for '${capitalizedName}'.`),
-    );
-    console.log(cyan('🧪 [Dry Run] No files were deleted or modified.'));
-    return;
-  }
-
-  if (fs.existsSync(bridgePath)) {
-    fs.rmSync(bridgePath, { force: true });
-    console.log(
-      green(`✅ Bridge '${capitalizedName}' file deleted at ${cli.config.srcDir}/global/${lowerName}.bridge.js`),
-    );
-  } else {
-    console.log(gray(`ℹ️ Bridge '${capitalizedName}' file was not found.`));
-  }
-
-  unregisterFromMainApp(cli, capitalizedName, lowerName);
-}
-
-/**
- * Destroys a Guard class file.
- * @param {object} cli
- * @param {string} name
- * @param {boolean} [dryRun]
- */
-export function destroyGuard(cli, name, dryRun = false) {
-  if (!name) {
-    fail('Please provide a guard name (e.g., avenx d guard auth)');
-    return;
-  }
-
-  const { capitalizedName: baseName, folderFileName: lowerName } = parseName(name);
-  const capitalizedName = baseName + 'Guard';
-  const guardDir = path.join(cli.baseDir, cli.config.srcDir, 'guards');
-  const guardPath = path.join(guardDir, `${lowerName}.guard.js`);
-
-  if (dryRun) {
-    console.log(cyan(`🧪 [Dry Run] Guard '${capitalizedName}' file would be deleted:`));
-    console.log(gray(`[DRY-RUN] Would delete: ${cli.config.srcDir}/guards/${lowerName}.guard.js`));
-    console.log(
-      cyan(`🧪 [Dry Run] ${cli.config.srcDir}/main.app.js would be updated to remove imports/registrations for '${capitalizedName}'.`),
-    );
-    console.log(cyan('🧪 [Dry Run] No files were deleted or modified.'));
-    return;
-  }
-
-  if (fs.existsSync(guardPath)) {
-    fs.rmSync(guardPath, { force: true });
-    console.log(
-      green(`✅ Guard '${capitalizedName}' file deleted at ${cli.config.srcDir}/guards/${lowerName}.guard.js`),
-    );
-  } else {
-    console.log(gray(`ℹ️ Guard '${capitalizedName}' file was not found.`));
-  }
-
-  unregisterFromMainApp(cli, capitalizedName, lowerName);
-}
+export default ContractValidator;
 </code></pre>
         </article>
     </section>

@@ -270,6 +270,292 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
 
     
+    <h4 class="name" id="child"><span class="type-signature"></span>child<span class="signature">(bindings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="AvenxLogger.html">AvenxLogger</a>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Creates a child logger instance that inherits the parent's log level, transports, and formatter.
+Supports a string shorthand for prefix-only binding, or an object with prefix and/or componentName.
+Parent bindings are merged with the new bindings (child overrides parent on conflict).</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>bindings</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+|
+
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Bindings configuration for the child logger.</p>
+                <h6>Properties</h6>
+                
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>prefix</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>A prefix string prepended to every formatted log message.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>componentName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Component name injected as context metadata, formatted as [ComponentName] by defaultFormatter.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line285">line 285</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>A new logger instance with inherited configuration and merged bindings.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="AvenxLogger.html">AvenxLogger</a></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+    <h5>Examples</h5>
+    
+    <pre class="prettyprint"><code>// String shorthand
+const authLogger = logger.child('[AuthBridge]');
+authLogger.info('User logged in');
+// Output: [AuthBridge] [Avenx info] User logged in</code></pre>
+
+    <pre class="prettyprint"><code>// Object bindings with context
+const dbLogger = logger.child({ prefix: '[DB]', componentName: 'DatabaseBridge' });
+dbLogger.warn('Connection slow');
+// Output: [DB] [Avenx warn] [DatabaseBridge] Connection slow</code></pre>
+
+    <pre class="prettyprint"><code>// Nested child loggers
+const child = logger.child('[Parent]').child('[Child]');</code></pre>
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="configure"><span class="type-signature"></span>configure<span class="signature">(config)</span><span class="type-signature"></span></h4>
     
 
@@ -371,7 +657,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line202">line 202</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line203">line 203</a>
     </li></ul></dd>
     
 
@@ -520,7 +806,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line274">line 274</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line341">line 341</a>
     </li></ul></dd>
     
 
@@ -669,7 +955,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line306">line 306</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line373">line 373</a>
     </li></ul></dd>
     
 
@@ -818,7 +1104,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line314">line 314</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line381">line 381</a>
     </li></ul></dd>
     
 
@@ -967,7 +1253,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line282">line 282</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line349">line 349</a>
     </li></ul></dd>
     
 
@@ -1116,7 +1402,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line290">line 290</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line357">line 357</a>
     </li></ul></dd>
     
 
@@ -1253,7 +1539,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line223">line 223</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line224">line 224</a>
     </li></ul></dd>
     
 
@@ -1390,7 +1676,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line232">line 232</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line233">line 233</a>
     </li></ul></dd>
     
 
@@ -1561,7 +1847,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line266">line 266</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line333">line 333</a>
     </li></ul></dd>
     
 
@@ -1710,7 +1996,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line298">line 298</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line365">line 365</a>
     </li></ul></dd>
     
 
@@ -1890,7 +2176,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line246">line 246</a>
+        <a href="lib_core_runtime_AvenxLogger.js.html">lib/core/runtime/AvenxLogger.js</a>, <a href="lib_core_runtime_AvenxLogger.js.html#line247">line 247</a>
     </li></ul></dd>
     
 
@@ -1942,7 +2228,7 @@ const loggerWithTransport = new AvenxLogger({ transports: [fileTransport] });</c
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue Aug 18 2026 21:14:06 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Wed Aug 19 2026 04:57:46 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

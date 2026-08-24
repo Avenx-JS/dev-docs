@@ -434,7 +434,7 @@ Global scopes outside this tracking collection are rejected with a sandbox excep
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line33">line 33</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line47">line 47</a>
     </li></ul></dd>
     
 
@@ -507,7 +507,7 @@ Placeholders are specified as {0}, {1}, etc. and replaced at formatting time.</p
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line107">line 107</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line135">line 135</a>
     </li></ul></dd>
     
 
@@ -778,7 +778,7 @@ basis via the <code>voidTags</code> array in <code>avenx.config.json</code> (see
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line21">line 21</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line22">line 22</a>
     </li></ul></dd>
     
 
@@ -933,6 +933,78 @@ property descriptors, prototype walks).</p>
 
         
             
+<h4 class="name" id="INSTANCE_API_KEYS"><span class="type-signature">(constant) </span>INSTANCE_API_KEYS<span class="type-signature"> :Set.&lt;string></span></h4>
+
+
+
+
+<div class="description">
+    <p>Keys of the consumer-facing instance that are not bridge state.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Set.&lt;string></span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_bridge.js.html">lib/core/runtime/bridge.js</a>, <a href="lib_core_runtime_bridge.js.html#line65">line 65</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
 <h4 class="name" id="INVALID_URL_PROTOCOL"><span class="type-signature">(constant) </span>INVALID_URL_PROTOCOL<span class="type-signature"></span></h4>
 
 
@@ -1040,6 +1112,78 @@ property descriptors, prototype walks).</p>
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
         <a href="lib_compiler_ContractValidator.js.html">lib/compiler/ContractValidator.js</a>, <a href="lib_compiler_ContractValidator.js.html#line38">line 38</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="IS_BRIDGE"><span class="type-signature">(constant) </span>IS_BRIDGE<span class="type-signature"> :symbol</span></h4>
+
+
+
+
+<div class="description">
+    <p>Marks a value as an Avenx bridge instance.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">symbol</span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_bridge.js.html">lib/core/runtime/bridge.js</a>, <a href="lib_core_runtime_bridge.js.html#line46">line 46</a>
     </li></ul></dd>
     
 
@@ -1180,6 +1324,223 @@ all rather than trying to enumerate every mutating API.</p>
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
         <a href="lib_core_security_sandbox.js.html">lib/core/security/sandbox.js</a>, <a href="lib_core_security_sandbox.js.html#line165">line 165</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="RESERVED_KEYS"><span class="type-signature">(constant) </span>RESERVED_KEYS<span class="type-signature"> :Array.&lt;string></span></h4>
+
+
+
+
+<div class="description">
+    <p>Definition keys that the Bridge API owns and a definition may not redeclare.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Array.&lt;string></span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_bridge.js.html">lib/core/runtime/bridge.js</a>, <a href="lib_core_runtime_bridge.js.html#line59">line 59</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="RUNTIME_SPECIFIER"><span class="type-signature">(constant) </span>RUNTIME_SPECIFIER<span class="type-signature"> :RegExp</span></h4>
+
+
+
+
+<div class="description">
+    <p>Module specifiers that resolve to the Avenx runtime.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">RegExp</span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line25">line 25</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="SET_NAME"><span class="type-signature">(constant) </span>SET_NAME<span class="type-signature"> :symbol</span></h4>
+
+
+
+
+<div class="description">
+    <p>Internal channel used by the compiler to label a bridge. A symbol keeps it
+out of the member namespace that templates and <code>ownKeys</code> see.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">symbol</span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_bridge.js.html">lib/core/runtime/bridge.js</a>, <a href="lib_core_runtime_bridge.js.html#line53">line 53</a>
     </li></ul></dd>
     
 
@@ -1366,6 +1727,81 @@ all rather than trying to enumerate every mutating API.</p>
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
         <a href="lib_core_security_sanitize.js.html">lib/core/security/sanitize.js</a>, <a href="lib_core_security_sanitize.js.html#line109">line 109</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="activeScope"><span class="type-signature"></span>activeScope<span class="type-signature"> :<a href="DisposalScope.html">DisposalScope</a>|null</span></h4>
+
+
+
+
+<div class="description">
+    <p>The scope that currently owns newly created teardown callbacks.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type"><a href="DisposalScope.html">DisposalScope</a></span>
+|
+
+<span class="param-type">null</span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scope.js.html">lib/core/reactive/scope.js</a>, <a href="lib_core_reactive_scope.js.html#line17">line 17</a>
     </li></ul></dd>
     
 
@@ -1638,7 +2074,7 @@ re-parse the config from disk.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line54">line 54</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line55">line 55</a>
     </li></ul></dd>
     
 
@@ -2979,6 +3415,396 @@ Defaults to 25 to accommodate deep legitimate multi-pass updates while stopping 
     
 
     
+    <h4 class="name" id="analyzeBridge"><span class="type-signature"></span>analyzeBridge<span class="signature">(filePath, source)</span><span class="type-signature"> &rarr; {object}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Analyses a bridge module.</p>
+<p>Legacy <code>class X extends AvenxBridge</code> modules are recognised but reported as
+<code>modern: false</code>, so the compiler can keep compiling them the old way.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>filePath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Absolute path to the <code>.bridge.js</code> file.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The module source.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line334">line 334</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>A descriptor of the bridge.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">object</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="analyzeBridgeFile"><span class="type-signature"></span>analyzeBridgeFile<span class="signature">(filePath, transform<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object|null}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Reads and analyses a bridge module from disk.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>filePath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Absolute path to the <code>.bridge.js</code> file.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>transform</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Optional source transform, used
+by the compiler to substitute environment variables.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line409">line 409</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The descriptor, or null when the file cannot be read.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">object</span>
+|
+
+<span class="param-type">null</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="analyzeStats"><span class="type-signature"></span>analyzeStats<span class="signature">(cli)</span><span class="type-signature"> &rarr; {object}</span></h4>
     
 
@@ -4004,6 +4830,579 @@ Deals with nested component boundaries and transcluded slots.</p>
     
 
     
+    <h4 class="name" id="bridge"><span class="type-signature"></span>bridge<span class="signature">(definition)</span><span class="type-signature"> &rarr; {object}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Creates a Bridge: a reactive unit of shared state and behaviour that
+components consume by importing it.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>definition</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The bridge definition.</p>
+                <h6>Properties</h6>
+                
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>state</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Initial shared state. Reactive, read-only for consumers.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>setup</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Lazy initializer run on first use. May return a cleanup function.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_bridge.js.html">lib/core/runtime/bridge.js</a>, <a href="lib_core_runtime_bridge.js.html#line115">line 115</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The bridge instance to export from the module.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">object</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="bridgeBindingName"><span class="type-signature"></span>bridgeBindingName<span class="signature">(name)</span><span class="type-signature"> &rarr; {string}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Returns the identifier the compiled bundle uses for a bridge instance.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>name</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The bridge name.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line47">line 47</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>A valid JavaScript identifier.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="bridgeNameFromFile"><span class="type-signature"></span>bridgeNameFromFile<span class="signature">(filePath)</span><span class="type-signature"> &rarr; {string}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Derives a bridge's name from its file name.
+<code>user-prefs.bridge.js</code> becomes <code>userPrefs</code>.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>filePath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Path to the bridge module.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line33">line 33</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The bridge name.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="buildProject"><span class="type-signature"></span>buildProject<span class="signature">(cli)</span><span class="type-signature"></span></h4>
     
 
@@ -4255,7 +5654,7 @@ combining <a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a> with any
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line44">line 44</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line45">line 45</a>
     </li></ul></dd>
     
 
@@ -5397,6 +6796,168 @@ effective class list is unchanged.</p>
     
 
     
+    <h4 class="name" id="cloneInitial"><span class="type-signature"></span>cloneInitial<span class="signature">(value)</span><span class="type-signature"> &rarr; {any}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Deep-copies plain objects and arrays so a bridge never mutates the literal
+that was passed to <code>bridge()</code>. Everything else (class instances, Dates,
+functions, Maps) is intentionally shared by reference: those values are not
+made reactive either, so copying them would only be surprising.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>value</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">any</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The value to copy.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_bridge.js.html">lib/core/runtime/bridge.js</a>, <a href="lib_core_runtime_bridge.js.html#line77">line 77</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>A copy for plain containers, or the original value.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">any</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="collectUnknownKeys"><span class="type-signature"></span>collectUnknownKeys<span class="signature">(obj, allowed, prefix)</span><span class="type-signature"> &rarr; {Array.&lt;string>}</span></h4>
     
 
@@ -6027,7 +7588,7 @@ that DomPatcher must always be able to patch (see issue #200).</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2070">line 2070</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2154">line 2154</a>
     </li></ul></dd>
     
 
@@ -6685,6 +8246,165 @@ arguments so Error objects and structured context keep their shape.</p>
     
 
     
+    <h4 class="name" id="declaredMembers"><span class="type-signature"></span>declaredMembers<span class="signature">(descriptor)</span><span class="type-signature"> &rarr; {Array.&lt;string>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Every member a consumer may legitimately read from a bridge instance.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>descriptor</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>A bridge descriptor.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line421">line 421</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The declared member names.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;string></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="defaultFormatter"><span class="type-signature"></span>defaultFormatter<span class="signature">(level, args)</span><span class="type-signature"> &rarr; {Array.&lt;any>}</span></h4>
     
 
@@ -6852,6 +8572,189 @@ Preserves interactive object logs by prepending to string or prepending as separ
     <dd>
         
 <span class="param-type">Array.&lt;any></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="defineBridgeName"><span class="type-signature"></span>defineBridgeName<span class="signature">(name, instance)</span><span class="type-signature"> &rarr; {object}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Assigns a bridge its diagnostic name. Emitted by the compiler alongside each
+bridge definition so error messages and devtools can identify it.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>name</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The bridge name, derived from its file name.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>instance</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The bridge instance.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_bridge.js.html">lib/core/runtime/bridge.js</a>, <a href="lib_core_runtime_bridge.js.html#line471">line 471</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The same instance, for convenient chaining.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">object</span>
 
 
     </dd>
@@ -7823,6 +9726,215 @@ Preserves interactive object logs by prepending to string or prepending as separ
     
 
     
+    <h4 class="name" id="emitBridge"><span class="type-signature"></span>emitBridge<span class="signature">(descriptor, source, registry)</span><span class="type-signature"> &rarr; {string}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Compiles a modern bridge module into a bundle-ready declaration.</p>
+<p>The whole module body is preserved inside an IIFE, so constants and helper
+functions declared above <code>export default</code> keep working and cannot collide
+with other modules. Imported bridges are re-bound to their canonical
+identifiers at the top of the IIFE rather than rewritten in place.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>descriptor</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The bridge descriptor.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The module source.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>registry</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Map.&lt;string, object></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>All discovered bridges, keyed by absolute path.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line437">line 437</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The emitted declaration.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="encodeMapping"><span class="type-signature"></span>encodeMapping<span class="signature">(genCol, sourceIdx, sourceLine, sourceCol, state)</span><span class="type-signature"> &rarr; {string}</span></h4>
     
 
@@ -8702,6 +10814,165 @@ Preserves interactive object logs by prepending to string or prepending as separ
     
 
     
+    <h4 class="name" id="extractEmittedEvents"><span class="type-signature"></span>extractEmittedEvents<span class="signature">(source)</span><span class="type-signature"> &rarr; {Array.&lt;string>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Extracts every event name emitted with a literal string, e.g. <code>this.emit('login')</code>.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The module source.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line221">line 221</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>Unique event names in source order.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;string></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="extractLintableTemplate"><span class="type-signature"></span>extractLintableTemplate<span class="signature">(source)</span><span class="type-signature"> &rarr; {string}</span></h4>
     
 
@@ -9167,6 +11438,165 @@ Preserves interactive object logs by prepending to string or prepending as separ
     
 
     
+    <h4 class="name" id="extractSubscriptions"><span class="type-signature"></span>extractSubscriptions<span class="signature">(source)</span><span class="type-signature"> &rarr; {Array.&lt;{target: string, event: string}>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Extracts <code>&lt;identifier&gt;.on('event', ...)</code> subscriptions from source.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The source to scan.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line236">line 236</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The subscriptions found.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;{target: string, event: string}></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="fail"><span class="type-signature"></span>fail<span class="signature">(message)</span><span class="type-signature"></span></h4>
     
 
@@ -9293,6 +11723,348 @@ Preserves interactive object logs by prepending to string or prepending as separ
 
 
 
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="findBridgeImports"><span class="type-signature"></span>findBridgeImports<span class="signature">(filePath, source)</span><span class="type-signature"> &rarr; {Array.&lt;{local: string, specifier: string, resolved: string}>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Collects the bridge imports of any module (component, page, bridge or main).</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>filePath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Absolute path to the importing file.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Its source text.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line314">line 314</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>One entry
+per default-imported bridge.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;{local: string, specifier: string, resolved: string}></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="findDefinitionBrace"><span class="type-signature"></span>findDefinitionBrace<span class="signature">(source)</span><span class="type-signature"> &rarr; {number}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Finds the <code>bridge(</code> call that produces the module's default export.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The module source.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line202">line 202</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>Index of the <code>{</code> opening the definition object, or -1.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">number</span>
+
+
+    </dd>
+</dl>
+
+    
 
 
 
@@ -11296,7 +14068,7 @@ Prefer this over ad-hoc <code>setTimeout</code> chains in unit tests.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line231">line 231</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line284">line 284</a>
     </li></ul></dd>
     
 
@@ -11973,7 +14745,7 @@ Prefer this over ad-hoc <code>setTimeout</code> chains in unit tests.</p>
 
 
 <div class="description">
-    <p>Generates a new Bridge class and template file.</p>
+    <p>Generates a new Bridge module.</p>
 </div>
 
 
@@ -12489,7 +15261,7 @@ Prefer this over ad-hoc <code>setTimeout</code> chains in unit tests.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="bin_commands_generate.js.html">bin/commands/generate.js</a>, <a href="bin_commands_generate.js.html#line212">line 212</a>
+        <a href="bin_commands_generate.js.html">bin/commands/generate.js</a>, <a href="bin_commands_generate.js.html#line223">line 223</a>
     </li></ul></dd>
     
 
@@ -12769,7 +15541,7 @@ Prefer this over ad-hoc <code>setTimeout</code> chains in unit tests.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="bin_commands_generate.js.html">bin/commands/generate.js</a>, <a href="bin_commands_generate.js.html#line114">line 114</a>
+        <a href="bin_commands_generate.js.html">bin/commands/generate.js</a>, <a href="bin_commands_generate.js.html#line125">line 125</a>
     </li></ul></dd>
     
 
@@ -13049,7 +15821,7 @@ Prefer this over ad-hoc <code>setTimeout</code> chains in unit tests.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="bin_commands_generate.js.html">bin/commands/generate.js</a>, <a href="bin_commands_generate.js.html#line162">line 162</a>
+        <a href="bin_commands_generate.js.html">bin/commands/generate.js</a>, <a href="bin_commands_generate.js.html#line173">line 173</a>
     </li></ul></dd>
     
 
@@ -14140,7 +16912,7 @@ file, e.g.:</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line102">line 102</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line103">line 103</a>
     </li></ul></dd>
     
 
@@ -15116,7 +17888,7 @@ file, e.g.:</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1857">line 1857</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1941">line 1941</a>
     </li></ul></dd>
     
 
@@ -15922,6 +18694,119 @@ file, e.g.:</p>
     
 
     
+    <h4 class="name" id="getScope"><span class="type-signature"></span>getScope<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="DisposalScope.html">DisposalScope</a>|null}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Returns the scope that currently owns new teardown callbacks.</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scope.js.html">lib/core/reactive/scope.js</a>, <a href="lib_core_reactive_scope.js.html#line81">line 81</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The active scope, or null outside of one.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="DisposalScope.html">DisposalScope</a></span>
+|
+
+<span class="param-type">null</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="getSequence"><span class="type-signature"></span>getSequence<span class="signature">(arr)</span><span class="type-signature"> &rarr; {Array.&lt;number>}</span></h4>
     
 
@@ -16606,7 +19491,7 @@ Uses binary search + parent tracking for O(N log N) complexity.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxComponent.js.html">lib/core/runtime/AvenxComponent.js</a>, <a href="lib_core_runtime_AvenxComponent.js.html#line546">line 546</a>
+        <a href="lib_core_runtime_AvenxComponent.js.html">lib/core/runtime/AvenxComponent.js</a>, <a href="lib_core_runtime_AvenxComponent.js.html#line555">line 555</a>
     </li></ul></dd>
     
 
@@ -17803,6 +20688,165 @@ $VAR_NAME or ${VAR_NAME} placeholders with process.env.VAR_NAME values.</p>
         
 <div class="param-desc">
     <p>True if it is a boolean attribute.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">boolean</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="isBridge"><span class="type-signature"></span>isBridge<span class="signature">(value)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Reports whether a value is a bridge instance created by <a href="global.html#bridge">bridge</a>.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>value</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">any</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The value to test.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_bridge.js.html">lib/core/runtime/bridge.js</a>, <a href="lib_core_runtime_bridge.js.html#line460">line 460</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>True when the value is a bridge instance.</p>
 </div>
 
 
@@ -19270,7 +22314,7 @@ instances that may contain private fields or internal slots.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2085">line 2085</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2169">line 2169</a>
     </li></ul></dd>
     
 
@@ -19814,7 +22858,7 @@ none is found, or if it fails to parse).</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line63">line 63</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line64">line 64</a>
     </li></ul></dd>
     
 
@@ -21450,6 +24494,165 @@ jobs in the scheduler queue have finished flushing.</p>
     
 
     
+    <h4 class="name" id="onScopeDispose"><span class="type-signature"></span>onScopeDispose<span class="signature">(disposer)</span><span class="type-signature"> &rarr; {function}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Registers a teardown callback with the active scope, if there is one.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>disposer</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The teardown callback.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scope.js.html">lib/core/reactive/scope.js</a>, <a href="lib_core_reactive_scope.js.html#line110">line 110</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>A release function that runs the teardown at most once.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">function</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="openBrowser"><span class="type-signature"></span>openBrowser<span class="signature">(url)</span><span class="type-signature"></span></h4>
     
 
@@ -21878,7 +25081,7 @@ boolean-attribute handling already expects, rather than <code>null</code>).</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1774">line 1774</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1858">line 1858</a>
     </li></ul></dd>
     
 
@@ -22417,7 +25620,7 @@ Matches dotenv behavior including single/double quotes and inline comments.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1876">line 1876</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line1960">line 1960</a>
     </li></ul></dd>
     
 
@@ -22454,6 +25657,328 @@ Matches dotenv behavior including single/double quotes and inline comments.</p>
     <dd>
         
 <span class="param-type">Array.&lt;<a href="HTMLNode.html">HTMLNode</a>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="parseImports"><span class="type-signature"></span>parseImports<span class="signature">(source)</span><span class="type-signature"> &rarr; {Array.&lt;{statement: string, specifier: string, defaultName: (string|null), named: Array.&lt;string>}>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Parses the import statements of a module.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The module source.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line252">line 252</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>One entry per import statement.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;{statement: string, specifier: string, defaultName: (string|null), named: Array.&lt;string>}></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="parseMember"><span class="type-signature"></span>parseMember<span class="signature">(segment)</span><span class="type-signature"> &rarr; {Object|null}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Reads the member name that starts a top-level object-literal entry.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>segment</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Source of one entry, starting after <code>{</code> or <code>,</code>.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line143">line 143</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The parsed
+member, or null when the segment is not a recognisable declaration.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Object</span>
+|
+
+<span class="param-type">null</span>
 
 
     </dd>
@@ -22601,6 +26126,188 @@ Supports camelCase, kebab-case, snake_case, and PascalCase.</p>
 <h5>Returns:</h5>
 
         
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Object</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="parseObjectMembers"><span class="type-signature"></span>parseObjectMembers<span class="signature">(source, openIndex)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Splits the top level of an object literal into member declarations.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The full source text.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>openIndex</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Index of the literal's opening <code>{</code>.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line175">line 175</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The declared members and the index of the closing brace.</p>
+</div>
+
 
 
 <dl>
@@ -25444,6 +29151,191 @@ with their stringified values from process.env.</p>
     
 
     
+    <h4 class="name" id="resolveBridgeSpecifier"><span class="type-signature"></span>resolveBridgeSpecifier<span class="signature">(fromFile, specifier)</span><span class="type-signature"> &rarr; {string|null}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Resolves a relative import specifier to a bridge module path, if it is one.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>fromFile</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The importing file.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>specifier</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The import specifier.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line289">line 289</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>Absolute path to the <code>.bridge.js</code> file, or null.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+|
+
+<span class="param-type">null</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="resolveComponentsDir"><span class="type-signature"></span>resolveComponentsDir<span class="signature">(projectRoot, componentsDir<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {string}</span></h4>
     
 
@@ -26695,6 +30587,194 @@ request is malformed or attempts to escape the root.</p>
     
 
     
+    <h4 class="name" id="runInScope"><span class="type-signature"></span>runInScope<span class="signature">(scope, fn)</span><span class="type-signature"> &rarr; {T}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Runs a function with the given scope active, restoring the previous scope
+afterwards. Passing <code>null</code> deliberately detaches ownership, which is how
+long-lived work (such as a bridge <code>setup()</code>) avoids being torn down by
+whichever component happened to touch it first.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>scope</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="DisposalScope.html">DisposalScope</a></span>
+|
+
+<span class="param-type">null</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The scope to activate.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>fn</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The function to run.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scope.js.html">lib/core/reactive/scope.js</a>, <a href="lib_core_reactive_scope.js.html#line95">line 95</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>Whatever <code>fn</code> returned.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">T</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="runInspect"><span class="type-signature"></span>runInspect<span class="signature">(cli)</span><span class="type-signature"></span></h4>
     
 
@@ -27162,6 +31242,190 @@ request is malformed or attempts to escape the root.</p>
     <dd>
         
 <span class="param-type">Promise.&lt;{stylePreprocessor: string, layoutTemplate: string, isInteractive: boolean}></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="scanObjectLiteral"><span class="type-signature"></span>scanObjectLiteral<span class="signature">(source, openIndex)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Walks source from an opening brace to its match, ignoring braces that appear
+inside strings, template literals or comments.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The source text.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>openIndex</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Index of the opening <code>{</code>.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line59">line 59</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The index of the matching
+<code>}</code> (or -1) and the offsets of commas at depth 1.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Object</span>
 
 
     </dd>
@@ -27694,7 +31958,7 @@ tag round-trips consistently.</p></td>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2034">line 2034</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2118">line 2118</a>
     </li></ul></dd>
     
 
@@ -29329,6 +33593,188 @@ nested styles such as <code>bold(cyan('text'))</code> intact.</p>
     <dd>
         
 <span class="param-type">function</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="suggestName"><span class="type-signature"></span>suggestName<span class="signature">(name, known)</span><span class="type-signature"> &rarr; {string}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Suggests the closest known name for a mistyped one, using edit distance.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>name</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The unknown name.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>known</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;string></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Candidate names.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line483">line 483</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>A &quot; Did you mean ...?&quot; fragment, or an empty string.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
 
 
     </dd>
@@ -31196,6 +35642,166 @@ into standard scoped selectors by removing the deep pseudo-selector wrappers/key
 
 
 
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="untracked"><span class="type-signature"></span>untracked<span class="signature">(fn)</span><span class="type-signature"> &rarr; {T}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>Runs a function outside of any reactive watcher, so reads performed inside it
+are not attributed to whichever render happened to trigger it.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>fn</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The function to run untracked.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_runtime_bridge.js.html">lib/core/runtime/bridge.js</a>, <a href="lib_core_runtime_bridge.js.html#line98">line 98</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>Whatever <code>fn</code> returned.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">T</span>
+
+
+    </dd>
+</dl>
+
+    
 
 
 
@@ -33230,6 +37836,328 @@ and un-proxies arguments/context when called.</p>
         </tr>
 
     
+
+        <tr>
+            
+                <td class="name"><code>BRIDGE_INVALID_DEFINITION</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_R19: bridge() received something other than a definition object.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>BRIDGE_RESERVED_KEY</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_R20: A bridge definition declares a key reserved by the Bridge API.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>BRIDGE_INVALID_MEMBER</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_R21: A bridge definition declares a top-level value outside of <code>state</code>.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>BRIDGE_READONLY_STATE</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_R22: Bridge state was assigned from outside the bridge.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>BRIDGE_INVALID_EVENT</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_R23: A bridge event name or listener has an unusable type.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>BRIDGE_LISTENER_ERROR</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_W36: A bridge event listener threw while handling an event.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>BRIDGE_SETUP_FAILED</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_R24: A bridge setup() hook threw during lazy initialization.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_BRIDGE_NOT_FOUND</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_C07: A component imports a bridge module that does not exist.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_BRIDGE_DUPLICATE_NAME</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_C08: Two bridge files resolve to the same bridge name.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_BRIDGE_UNSUPPORTED_IMPORT</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_C09: A bridge module imports a module the bundler cannot inline.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_BRIDGE_ISOLATED_IMPORT</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_C10: An isolated component imports a bridge.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_BRIDGE_CIRCULAR_IMPORT</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_C11: Bridge modules import each other in a cycle.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_BRIDGE_UNKNOWN_MEMBER</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_W37: A template reads a member that the bridge does not declare.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_BRIDGE_UNKNOWN_EVENT</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_W38: Code subscribes to an event the bridge never emits.</p></td>
+        </tr>
+
+    
     </tbody>
 </table>
 
@@ -33784,13 +38712,13 @@ and un-proxies arguments/context when called.</p>
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#FUNCTION_CONSTRUCTORS">FUNCTION_CONSTRUCTORS</a></li><li><a href="global.html#IMPURE_PATTERNS">IMPURE_PATTERNS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#NON_DETERMINISTIC_PATTERNS">NON_DETERMINISTIC_PATTERNS</a></li><li><a href="global.html#PROTECTED_PROTOTYPES">PROTECTED_PROTOTYPES</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#assertNotFunctionConstructor">assertNotFunctionConstructor</a></li><li><a href="global.html#assertNotProtectedPrototype">assertNotProtectedPrototype</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#byJobId">byJobId</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createInterpolationRegex">createInterpolationRegex</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushDepth">flushDepth</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#flushPromises">flushPromises</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isInsideRoot">isInsideRoot</a></li><li><a href="global.html#isReactive">isReactive</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#markRaw">markRaw</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maskSecret">maskSecret</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readEnvFileMeta">readEnvFileMeta</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#resolveRequestPath">resolveRequestPath</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runEnv">runEnv</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#toRaw">toRaw</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchEffect">watchEffect</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_core_index.html">lib/core/index</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxBridge.html">AvenxBridge</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DisposalScope.html">DisposalScope</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#FUNCTION_CONSTRUCTORS">FUNCTION_CONSTRUCTORS</a></li><li><a href="global.html#IMPURE_PATTERNS">IMPURE_PATTERNS</a></li><li><a href="global.html#INSTANCE_API_KEYS">INSTANCE_API_KEYS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#IS_BRIDGE">IS_BRIDGE</a></li><li><a href="global.html#NON_DETERMINISTIC_PATTERNS">NON_DETERMINISTIC_PATTERNS</a></li><li><a href="global.html#PROTECTED_PROTOTYPES">PROTECTED_PROTOTYPES</a></li><li><a href="global.html#RESERVED_KEYS">RESERVED_KEYS</a></li><li><a href="global.html#RUNTIME_SPECIFIER">RUNTIME_SPECIFIER</a></li><li><a href="global.html#SET_NAME">SET_NAME</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#activeScope">activeScope</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#analyzeBridge">analyzeBridge</a></li><li><a href="global.html#analyzeBridgeFile">analyzeBridgeFile</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#assertNotFunctionConstructor">assertNotFunctionConstructor</a></li><li><a href="global.html#assertNotProtectedPrototype">assertNotProtectedPrototype</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#bridge">bridge</a></li><li><a href="global.html#bridgeBindingName">bridgeBindingName</a></li><li><a href="global.html#bridgeNameFromFile">bridgeNameFromFile</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#byJobId">byJobId</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#cloneInitial">cloneInitial</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createInterpolationRegex">createInterpolationRegex</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#declaredMembers">declaredMembers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#defineBridgeName">defineBridgeName</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#emitBridge">emitBridge</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractEmittedEvents">extractEmittedEvents</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#extractSubscriptions">extractSubscriptions</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#findBridgeImports">findBridgeImports</a></li><li><a href="global.html#findDefinitionBrace">findDefinitionBrace</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushDepth">flushDepth</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#flushPromises">flushPromises</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getScope">getScope</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isBridge">isBridge</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isInsideRoot">isInsideRoot</a></li><li><a href="global.html#isReactive">isReactive</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#markRaw">markRaw</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maskSecret">maskSecret</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#onScopeDispose">onScopeDispose</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseImports">parseImports</a></li><li><a href="global.html#parseMember">parseMember</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseObjectMembers">parseObjectMembers</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readEnvFileMeta">readEnvFileMeta</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveBridgeSpecifier">resolveBridgeSpecifier</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#resolveRequestPath">resolveRequestPath</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runEnv">runEnv</a></li><li><a href="global.html#runInScope">runInScope</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scanObjectLiteral">scanObjectLiteral</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#suggestName">suggestName</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#toRaw">toRaw</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#untracked">untracked</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchEffect">watchEffect</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Sun Aug 23 2026 20:30:15 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Aug 24 2026 20:13:45 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

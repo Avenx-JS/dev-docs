@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Class: AvenxRouter</title>
+    <title>JSDoc: Module: lib/compiler/runtimeImports</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Class: AvenxRouter</h1>
+    <h1 class="page-title">Module: lib/compiler/runtimeImports</h1>
 
     
 
@@ -28,10 +28,8 @@
 
 <header>
     
-        <h2><span class="attribs"><span class="type-signature"></span></span>AvenxRouter<span class="signature">(app, routes, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h2>
         
-            <div class="class-description"><p>AvenxRouter handles routing for the application.
-Matches URL route definitions to specific Page components using pluggable navigation delegates.</p></div>
+            
         
     
 </header>
@@ -40,148 +38,29 @@ Matches URL route definitions to specific Page components using pluggable naviga
     <div class="container-overview">
     
         
-
-    
-    <h2>Constructor</h2>
-    
-
-    
-    <h4 class="name" id="AvenxRouter"><span class="type-signature"></span>new AvenxRouter<span class="signature">(app, routes, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
-    
-
-    
-
-
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-        <th>Attributes</th>
+            <div class="description"><p>Rewrites Avenx runtime imports into destructuring from the global namespace.</p>
+<p>A compiled application is one concatenated script, so the <code>import</code>
+statements in <code>main.app.js</code>, guard modules and bridge modules cannot survive
+as imports. They used to be deleted outright, which left the imported names
+resolving to bare globals — and worked only because the runtime copied all
+67 of its exports onto <code>globalThis</code>.</p>
+<p>Rewriting instead of deleting means an import keeps meaning what it says:</p>
+<p>import { logger, LruCache } from 'avenx-core/runtime';
+-&gt; const { logger, LruCache } = Avenx;</p>
+<p>so the runtime only has to publish a namespace, not its whole surface.</p></div>
         
 
         
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>app</code></td>
             
 
-            <td class="type">
-            
-                
-<span class="param-type"><a href="AvenxApp.html">AvenxApp</a></span>
 
 
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"><p>The main application instance.</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>routes</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object.&lt;string, (string|object)></span>
 
 
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"><p>A map of hash routes to page names or route definitions.</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>options</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">object</span>
 
 
-            
-            </td>
 
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
 
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"><p>Optional router configurations (e.g. prefix, delegate, mode).</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
 
 
 
@@ -217,7 +96,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line15">line 15</a>
+        <a href="lib_compiler_runtimeImports.js.html">lib/compiler/runtimeImports.js</a>, <a href="lib_compiler_runtimeImports.js.html#line1">line 1</a>
     </li></ul></dd>
     
 
@@ -247,6 +126,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
 
 
+        
     
     </div>
 
@@ -254,13 +134,6 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
     
 
-    
-        <h3 class="subsection-title">Classes</h3>
-
-        <dl>
-            <dt><a href="AvenxRouter.html">AvenxRouter</a></dt>
-            <dd></dd>
-        </dl>
     
 
     
@@ -274,220 +147,26 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
         
             
-<h4 class="name" id="afterHooks"><span class="type-signature"></span>afterHooks<span class="type-signature"> :Array.&lt;function()></span></h4>
-
-
-
-
-
-
-    <h5>Type:</h5>
-    <ul>
-        <li>
-            
-<span class="param-type">Array.&lt;function()></span>
-
-
-        </li>
-    </ul>
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line52">line 52</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-            
-<h4 class="name" id="app"><span class="type-signature"></span>app<span class="type-signature"> :<a href="AvenxApp.html">AvenxApp</a></span></h4>
-
-
-
-
-
-
-    <h5>Type:</h5>
-    <ul>
-        <li>
-            
-<span class="param-type"><a href="AvenxApp.html">AvenxApp</a></span>
-
-
-        </li>
-    </ul>
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line38">line 38</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-            
-<h4 class="name" id="beforeHooks"><span class="type-signature"></span>beforeHooks<span class="type-signature"> :Array.&lt;(function()|object)></span></h4>
-
-
-
-
-
-
-    <h5>Type:</h5>
-    <ul>
-        <li>
-            
-<span class="param-type">Array.&lt;(function()|object)></span>
-
-
-        </li>
-    </ul>
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line50">line 50</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-            
-<h4 class="name" id="currentRoute"><span class="type-signature"></span>currentRoute<span class="type-signature"></span></h4>
+<h4 class="name" id="~IMPORT_STATEMENT"><span class="type-signature">(inner, constant) </span>IMPORT_STATEMENT<span class="type-signature"> :RegExp</span></h4>
 
 
 
 
 <div class="description">
-    <p>Getter for currentRoute. Returns null if null was assigned, or the stable reactive proxy.</p>
+    <p>Matches a complete import statement, capturing its clause and specifier.</p>
 </div>
 
 
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">RegExp</span>
+
+
+        </li>
+    </ul>
 
 
 
@@ -522,7 +201,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line582">line 582</a>
+        <a href="lib_compiler_runtimeImports.js.html">lib/compiler/runtimeImports.js</a>, <a href="lib_compiler_runtimeImports.js.html#line31">line 31</a>
     </li></ul></dd>
     
 
@@ -540,80 +219,22 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
         
             
-<h4 class="name" id="currentRoute"><span class="type-signature"></span>currentRoute<span class="type-signature"></span></h4>
+<h4 class="name" id="~RUNTIME_SPECIFIER"><span class="type-signature">(inner, constant) </span>RUNTIME_SPECIFIER<span class="type-signature"> :RegExp</span></h4>
 
 
 
 
 <div class="description">
-    <p>Setter for currentRoute. Reactively updates the stable proxy properties.</p>
+    <p>Matches an import whose specifier resolves to the Avenx runtime entry.</p>
 </div>
 
 
 
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line590">line 590</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-            
-<h4 class="name" id="delegate"><span class="type-signature"></span>delegate<span class="type-signature"> :object</span></h4>
-
-
-
-
-
-
     <h5>Type:</h5>
     <ul>
         <li>
             
-<span class="param-type">object</span>
+<span class="param-type">RegExp</span>
 
 
         </li>
@@ -652,285 +273,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line55">line 55</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-            
-<h4 class="name" id="hashToIgnore"><span class="type-signature"></span>hashToIgnore<span class="type-signature"> :string|null</span></h4>
-
-
-
-
-
-
-    <h5>Type:</h5>
-    <ul>
-        <li>
-            
-<span class="param-type">string</span>
-|
-
-<span class="param-type">null</span>
-
-
-        </li>
-    </ul>
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line47">line 47</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-            
-<h4 class="name" id="options"><span class="type-signature"></span>options<span class="type-signature"> :object</span></h4>
-
-
-
-
-
-
-    <h5>Type:</h5>
-    <ul>
-        <li>
-            
-<span class="param-type">object</span>
-
-
-        </li>
-    </ul>
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line42">line 42</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-            
-<h4 class="name" id="redirectContext"><span class="type-signature"></span>redirectContext<span class="type-signature"> :Object|null</span></h4>
-
-
-
-
-
-
-    <h5>Type:</h5>
-    <ul>
-        <li>
-            
-<span class="param-type">Object</span>
-|
-
-<span class="param-type">null</span>
-
-
-        </li>
-    </ul>
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line45">line 45</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-            
-<h4 class="name" id="routes"><span class="type-signature"></span>routes<span class="type-signature"> :Object.&lt;string, (string|object)></span></h4>
-
-
-
-
-
-
-    <h5>Type:</h5>
-    <ul>
-        <li>
-            
-<span class="param-type">Object.&lt;string, (string|object)></span>
-
-
-        </li>
-    </ul>
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line40">line 40</a>
+        <a href="lib_compiler_runtimeImports.js.html">lib/compiler/runtimeImports.js</a>, <a href="lib_compiler_runtimeImports.js.html#line25">line 25</a>
     </li></ul></dd>
     
 
@@ -958,7 +301,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
     
 
     
-    <h4 class="name" id="afterEach"><span class="type-signature"></span>afterEach<span class="signature">(callback)</span><span class="type-signature"> &rarr; {function}</span></h4>
+    <h4 class="name" id=".isRuntimeSpecifier"><span class="type-signature">(static) </span>isRuntimeSpecifier<span class="signature">(specifier)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
     
 
     
@@ -966,7 +309,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
 
 <div class="description">
-    <p>Registers a global after hook callback that executes after successful route navigation.</p>
+    <p>Reports whether a specifier points at the Avenx runtime.</p>
 </div>
 
 
@@ -1002,835 +345,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
         <tr>
             
-                <td class="name"><code>callback</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">function</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>The callback to execute after navigation.</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line96">line 96</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-<div class="param-desc">
-    <p>Unregister function.</p>
-</div>
-
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">function</span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="back"><span class="type-signature"></span>back<span class="signature">()</span><span class="type-signature"></span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Steps backward in navigation history.</p>
-</div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line138">line 138</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="beforeEach"><span class="type-signature"></span>beforeEach<span class="signature">(callback)</span><span class="type-signature"> &rarr; {function}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Registers a global guard callback that executes before route guards on navigation transitions.</p>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>callback</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">function</span>
-|
-
-<span class="param-type">object</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>The guard callback or guard instance/class.</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line79">line 79</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-<div class="param-desc">
-    <p>Unregister function.</p>
-</div>
-
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">function</span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="destroy"><span class="type-signature"></span>destroy<span class="signature">()</span><span class="type-signature"></span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Destroys the router and cleans up event listeners.</p>
-</div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line160">line 160</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="forward"><span class="type-signature"></span>forward<span class="signature">()</span><span class="type-signature"></span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Steps forward in navigation history.</p>
-</div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line145">line 145</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="getRoutes"><span class="type-signature"></span>getRoutes<span class="signature">()</span><span class="type-signature"> &rarr; {Array.&lt;{pattern: string, definition: (string|object)}>}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Returns a snapshot of all registered routes.</p>
-</div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line171">line 171</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">Array.&lt;{pattern: string, definition: (string|object)}></span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="go"><span class="type-signature"></span>go<span class="signature">(delta)</span><span class="type-signature"></span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Moves to a specific history position relative to current position.</p>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>delta</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">number</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>Relative step count in history (e.g. -1 for back, 1 for forward).</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line153">line 153</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="matches"><span class="type-signature"></span>matches<span class="signature">(hash)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Checks if this router has a matching route (excluding fallback) for the given hash.</p>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>hash</code></td>
+                <td class="name"><code>specifier</code></td>
             
 
             <td class="type">
@@ -1846,7 +361,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
             
 
-            <td class="description last"><p>The URL hash.</p></td>
+            <td class="description last"><p>The import specifier.</p></td>
         </tr>
 
     
@@ -1887,7 +402,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line183">line 183</a>
+        <a href="lib_compiler_runtimeImports.js.html">lib/compiler/runtimeImports.js</a>, <a href="lib_compiler_runtimeImports.js.html#line77">line 77</a>
     </li></ul></dd>
     
 
@@ -1916,7 +431,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
         
 <div class="param-desc">
-    <p>True if a non-fallback route matches.</p>
+    <p>True when the import targets the runtime entry.</p>
 </div>
 
 
@@ -1945,7 +460,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
     
 
     
-    <h4 class="name" id="navigate"><span class="type-signature"></span>navigate<span class="signature">(hash, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id=".rewriteRuntimeImports"><span class="type-signature">(static) </span>rewriteRuntimeImports<span class="signature">(source)</span><span class="type-signature"> &rarr; {string}</span></h4>
     
 
     
@@ -1953,7 +468,10 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
 
 <div class="description">
-    <p>Navigates to a specific hash route.</p>
+    <p>Rewrites runtime imports and removes every other import statement.</p>
+<p>Non-runtime imports are relative references to components, pages and bridges,
+which the compiler resolves by concatenation rather than by module
+resolution, so they are dropped as they always have been.</p>
 </div>
 
 
@@ -1977,8 +495,6 @@ Matches URL route definitions to specific Page components using pluggable naviga
         <th>Type</th>
 
         
-        <th>Attributes</th>
-        
 
         
 
@@ -1991,7 +507,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
         <tr>
             
-                <td class="name"><code>hash</code></td>
+                <td class="name"><code>source</code></td>
             
 
             <td class="type">
@@ -2004,51 +520,10 @@ Matches URL route definitions to specific Page components using pluggable naviga
             </td>
 
             
-                <td class="attributes">
-                
-
-                
-
-                
-                </td>
-            
 
             
 
-            <td class="description last"><p>The target hash (e.g., '#/about').</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>options</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"><p>Navigation options.</p></td>
+            <td class="description last"><p>The module source.</p></td>
         </tr>
 
     
@@ -2089,7 +564,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line120">line 120</a>
+        <a href="lib_compiler_runtimeImports.js.html">lib/compiler/runtimeImports.js</a>, <a href="lib_compiler_runtimeImports.js.html#line90">line 90</a>
     </li></ul></dd>
     
 
@@ -2114,6 +589,28 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
 
 
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The source with imports rewritten or removed.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+
+
+    </dd>
+</dl>
+
+    
 
 
 
@@ -2125,7 +622,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
     
 
     
-    <h4 class="name" id="start"><span class="type-signature"></span>start<span class="signature">()</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="~clauseToPattern"><span class="type-signature">(inner) </span>clauseToPattern<span class="signature">(clause)</span><span class="type-signature"> &rarr; {string|null}</span></h4>
     
 
     
@@ -2133,7 +630,10 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
 
 <div class="description">
-    <p>Starts the router and handles the initial route.</p>
+    <p>Converts an import clause into a destructuring pattern.</p>
+<p><code>{ a, b as c }</code> becomes <code>{ a, b: c }</code>. A namespace clause (<code>* as Avenx</code>)
+binds the namespace object itself. A bare specifier with no clause
+contributes nothing.</p>
 </div>
 
 
@@ -2142,6 +642,55 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
 
 
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>clause</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The text between <code>import</code> and <code>from</code>.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
 
 
 
@@ -2177,7 +726,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxRouter.js.html">lib/core/runtime/AvenxRouter.js</a>, <a href="lib_core_runtime_AvenxRouter.js.html#line111">line 111</a>
+        <a href="lib_compiler_runtimeImports.js.html">lib/compiler/runtimeImports.js</a>, <a href="lib_compiler_runtimeImports.js.html#line42">line 42</a>
     </li></ul></dd>
     
 
@@ -2202,6 +751,31 @@ Matches URL route definitions to specific Page components using pluggable naviga
 
 
 
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>A destructuring pattern, an identifier, or null.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+|
+
+<span class="param-type">null</span>
+
+
+    </dd>
+</dl>
+
+    
 
 
 
@@ -2229,7 +803,7 @@ Matches URL route definitions to specific Page components using pluggable naviga
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue Aug 25 2026 20:26:39 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue Aug 25 2026 20:26:40 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/core/trace/exportTest.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/core/trace/exportTest.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @file exportTest.js
+ * @description Turns a recorded trace into an executable regression test.
+ *
+ * This is the part of the feature that earns its keep. A causal view explains
+ * a bug once; an exported test keeps it fixed. The step from "I reproduced it"
+ * to "there is a test for it" is the expensive one on every team, and a trace
+ * already contains everything that step needs: the inputs, the expected
+ * observations, and the responses to replay instead of the network.
+ *
+ * The generated file is deliberately readable and deliberately editable. It is
+ * a starting point a developer prunes — delete the assertions you do not care
+ * about, keep the ones that describe the bug — not an opaque artifact.
+ * @module lib/core/trace/exportTest
+ */
+
+import { TraceNodeType, Determinism, INPUT_TYPES, indexNodes } from './schema.js';
+import { formatCaptured } from './capture.js';
+
+/**
+ * Escapes a value for embedding in generated source.
+ * @param {any} value - The value.
+ * @returns {string} A JavaScript literal.
+ */
+function literal(value) {
+  return JSON.stringify(value);
+}
+
+/**
+ * Collects the inputs replay will drive, with the observations each caused.
+ * @param {object} trace - The trace.
+ * @returns {object[]} One entry per input, in recorded order.
+ */
+function inputSteps(trace) {
+  const byId = indexNodes(trace);
+  const stepOf = new Map();
+  const steps = [];
+
+  for (const node of trace.nodes) {
+    if (!INPUT_TYPES.has(node.type) || (node.parent !== null &amp;&amp; node.parent !== undefined)) {
+      continue;
+    }
+    if (node.type === TraceNodeType.RESOURCE &amp;&amp; node.phase === 'settled') {
+      continue;
+    }
+    stepOf.set(node.id, steps.length);
+    steps.push({ index: steps.length, input: node, writes: [], dom: [], navigations: [] });
+  }
+
+  for (const node of trace.nodes) {
+    let current = node;
+    while (current &amp;&amp; !stepOf.has(current.id)) {
+      current = current.parent === null || current.parent === undefined ? null : byId.get(current.parent);
+    }
+    if (!current) {
+      continue;
+    }
+    const step = steps[stepOf.get(current.id)];
+    if (node.type === TraceNodeType.WRITE &amp;&amp; node.to !== undefined) {
+      step.writes.push(node);
+    } else if (node.type === TraceNodeType.DOM &amp;&amp; (node.op === 'text' || node.op === 'attr')) {
+      step.dom.push(node);
+    } else if (node.type === TraceNodeType.NAVIGATION &amp;&amp; node !== current) {
+      step.navigations.push(node);
+    }
+  }
+
+  return steps;
+}
+
+/**
+ * Describes an input in a comment.
+ * @param {object} input - The input node.
+ * @returns {string} A short label.
+ */
+function describe(input) {
+  if (input.type === TraceNodeType.EVENT) {
+    const target = input.target ? `&lt;${input.target.selector}>` : '&lt;unknown>';
+    const value = input.value !== undefined ? ` with value ${literal(input.value)}` : '';
+    return `${input.eventType} on ${target}${value}`;
+  }
+  if (input.type === TraceNodeType.NAVIGATION) {
+    return `navigate to ${input.to}`;
+  }
+  return input.type;
+}
+
+/**
+ * Builds the assertion lines for one step.
+ *
+ * Assertions come from the recorded DOM and state changes rather than from the
+ * final state alone, so a generated test fails at the step that broke rather
+ * than at the end.
+ * @param {object} step - A step from {@link inputSteps}.
+ * @param {boolean} redacted - Whether the trace withheld values.
+ * @returns {string[]} Assertion source lines, already indented.
+ */
+function assertionsFor(step, redacted) {
+  const lines = [];
+
+  for (const dom of step.dom) {
+    if (!dom.target || dom.to === null || dom.to === undefined) {
+      continue;
+    }
+    if (redacted &amp;&amp; typeof dom.to === 'string' &amp;&amp; dom.to.includes('[redacted]')) {
+      continue;
+    }
+    const selector = literal(dom.target.selector);
+    const nth = dom.target.nth || 0;
+    const finder = nth === 0 ? `find(${selector})` : `findAll(${selector})[${nth}]`;
+    if (dom.op === 'text') {
+      lines.push(
+        `      // ${dom.target.selector} showed ${formatCaptured(dom.from)} before this step.`,
+        `      assert.strictEqual(app.${finder}.textContent.trim(), ${literal(String(dom.to).trim())});`,
+      );
+    } else {
+      lines.push(
+        `      assert.strictEqual(app.${finder}.getAttribute(${literal(dom.name)}), ${literal(String(dom.to))});`,
+      );
+    }
+  }
+
+  if (lines.length === 0) {
+    // A step with no assertable DOM change still deserves a line, so the
+    // developer can see it happened and decide what to check.
+    lines.push('      // No DOM change was recorded for this step.');
+  }
+
+  return lines;
+}
+
+/**
+ * Generates the source of a regression test from a trace.
+ * @param {object} trace - The trace to export.
+ * @param {object} options - Generation options.
+ * @param {string} options.tracePath - Import specifier for the trace JSON, relative to the test.
+ * @param {string} [options.componentPath] - Import specifier for the component to mount.
+ * @param {string} [options.componentName] - The component's class name, for comments.
+ * @param {Array&lt;{name: string, path: string}>} [options.bridges] - Bridges the component
+ *   imports, with import specifiers relative to the generated test.
+ * @param {string} [options.title] - The test's title.
+ * @returns {string} The generated test source.
+ */
+export function generateTest(trace, options) {
+  const steps = inputSteps(trace);
+  const deterministic = (trace.determinism &amp;&amp; trace.determinism.status) === Determinism.DETERMINISTIC;
+  const title = options.title || `regression: ${trace.id}`;
+  const redacted = !!trace.redacted;
+
+  const lines = [];
+
+  lines.push(
+    '/**',
+    ` * Regression test generated by \`avenx trace export ${trace.id}\`.`,
+    ' *',
+    ` * Recorded ${trace.createdAt || 'at an unknown time'}${trace.meta &amp;&amp; trace.meta.url ? ` at ${trace.meta.url}` : ''}.`,
+    ` * ${steps.length} recorded input${steps.length === 1 ? '' : 's'}.`,
+    ' *',
+    ' * replay() drives the recorded inputs back through the real framework and',
+    ' * compares every state and DOM change against the recording. The assertions',
+    ' * below are additional, and are yours to prune: keep the ones that describe',
+    ' * the bug, delete the rest.',
+  );
+
+  if (!deterministic) {
+    lines.push(
+      ' *',
+      ' * ⚠ This trace was recorded as best-effort, so replay may not reproduce it:',
+    );
+    for (const reason of (trace.determinism &amp;&amp; trace.determinism.reasons) || []) {
+      lines.push(` *   - ${reason.reason}${reason.detail ? `: ${reason.detail}` : ''}`);
+    }
+    lines.push(
+      ' *   allowBestEffort is set below so this file runs, but the result will',
+      ' *   never be reported as verified. Fix the source of non-determinism and',
+      ' *   re-record for a test you can rely on.',
+    );
+  }
+
+  if (redacted) {
+    lines.push(
+      ' *',
+      ` * Redacted paths (${(trace.redactions || []).join(', ')}) were withheld at`,
+      ' * record time, so no assertion below can check them.',
+    );
+  }
+
+  lines.push(' */', '');
+
+  lines.push(
+    "import assert from 'assert';",
+    "import { mountTestComponent, replay } from 'avenx-core/testing';",
+  );
+  if (options.componentPath) {
+    lines.push("import { loadComponent } from 'avenx-core/tooling';");
+  }
+
+  // A component that imports a bridge compiles to a reference the bundle
+  // supplies, so the test has to hand the real bridge instances in. Bridge
+  // modules are ordinary ES modules, so they import normally.
+  const bridges = options.bridges || [];
+  for (const entry of bridges) {
+    lines.push(`import ${entry.name} from ${literal(entry.path)};`);
+  }
+
+  lines.push(`import trace from ${literal(options.tracePath)} with { type: 'json' };`, '');
+
+  if (options.componentPath) {
+    const bridgeArg =
+      bridges.length > 0 ? `,\n  { bridges: { ${bridges.map((entry) => entry.name).join(', ')} } },` : ',';
+    lines.push(
+      `const ${options.componentName || 'Component'} = loadComponent(`,
+      `  new URL(${literal(options.componentPath)}, import.meta.url).pathname${bridgeArg}`,
+      ');',
+      '',
+    );
+  } else {
+    lines.push(
+      '// The recording did not identify a single component to mount. Replace this',
+      '// with however your application is set up for tests.',
+      '// const Component = loadComponent("../src/components/…/….component.js");',
+      '',
+    );
+  }
+
+  lines.push(`console.log(${literal(`🧪 ${title}`)});`, '');
+
+  lines.push('let app;', '');
+  lines.push('const result = await replay(trace, {');
+  if (!deterministic) {
+    lines.push('  // See the note above: this trace is best-effort.');
+    lines.push('  allowBestEffort: true,');
+  }
+  lines.push('  async mount() {');
+  if (options.componentPath) {
+    lines.push(`    app = await mountTestComponent(${options.componentName || 'Component'}, {});`);
+  } else {
+    lines.push('    app = await mountTestComponent(Component, {});');
+  }
+  lines.push('    return app;', '  },');
+
+  lines.push('  async at(step) {', '    switch (step.index) {');
+  for (const step of steps) {
+    lines.push(`      // Step ${step.index + 1}: ${describe(step.input)}`);
+    lines.push(`      case ${step.index}: {`);
+    for (const line of assertionsFor(step, redacted)) {
+      lines.push(`  ${line}`);
+    }
+    lines.push('        break;', '      }');
+  }
+  lines.push('      default:', '        break;', '    }', '  },', '});', '');
+
+  lines.push(
+    '// replay() throws on divergence, so reaching here means every recorded state',
+    '// and DOM change was reproduced exactly.',
+    'assert.strictEqual(result.ok, true);',
+  );
+  if (deterministic) {
+    lines.push(
+      "assert.strictEqual(result.verified, true, 'a deterministic trace reproduced exactly');",
+    );
+  }
+
+  const finalWrites = steps.flatMap((step) => step.writes);
+  const lastWrite = finalWrites[finalWrites.length - 1];
+  if (lastWrite &amp;&amp; lastWrite.path &amp;&amp; !String(lastWrite.to).includes('[redacted]')) {
+    lines.push(
+      '',
+      `// Final recorded state: ${lastWrite.path} ended at ${formatCaptured(lastWrite.to)}.`,
+    );
+  }
+
+  lines.push('', 'app.unmount();', `console.log(${literal(`✅ ${title}`)});`, '');
+
+  return lines.join('\n');
+}
+
+/**
+ * Suggests a file name stem for an exported trace.
+ * @param {object} trace - The trace.
+ * @returns {string} A kebab-case stem such as `cart-item-click`.
+ */
+export function suggestName(trace) {
+  const nodes = trace.nodes || [];
+  const component = nodes.find((node) => node.component);
+  const input = nodes.find((node) => node.type === TraceNodeType.EVENT);
+
+  const parts = [];
+  if (component) {
+    parts.push(
+      String(component.component)
+        .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+        .toLowerCase(),
+    );
+  }
+  if (input &amp;&amp; input.eventType) {
+    parts.push(input.eventType);
+  }
+  if (parts.length === 0) {
+    parts.push(String(trace.id || 'trace').replace(/[^a-z0-9]+/gi, '-'));
+  }
+  return parts.join('-').replace(/-+/g, '-');
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_compiler_runtimeImports.html">lib/compiler/runtimeImports</a></li><li><a href="module-lib_compiler_sourceMapTrace.html">lib/compiler/sourceMapTrace</a></li><li><a href="module-lib_core_index.html">lib/core/index</a></li><li><a href="module-lib_core_reactive_symbols.html">lib/core/reactive/symbols</a></li><li><a href="module-lib_core_testing.html">lib/core/testing</a></li><li><a href="module-lib_core_tooling.html">lib/core/tooling</a></li><li><a href="module-lib_core_tooling_loadComponent.html">lib/core/tooling/loadComponent</a></li><li><a href="module-lib_core_trace_capture.html">lib/core/trace/capture</a></li><li><a href="module-lib_core_trace_contracts.html">lib/core/trace/contracts</a></li><li><a href="module-lib_core_trace_derived.html">lib/core/trace/derived</a></li><li><a href="module-lib_core_trace_devtools.html">lib/core/trace/devtools</a></li><li><a href="module-lib_core_trace_dom.html">lib/core/trace/dom</a></li><li><a href="module-lib_core_trace_exportTest.html">lib/core/trace/exportTest</a></li><li><a href="module-lib_core_trace_format.html">lib/core/trace/format</a></li><li><a href="module-lib_core_trace_globals.html">lib/core/trace/globals</a></li><li><a href="module-lib_core_trace_reactive.html">lib/core/trace/reactive</a></li><li><a href="module-lib_core_trace_recorder.html">lib/core/trace/recorder</a></li><li><a href="module-lib_core_trace_redact.html">lib/core/trace/redact</a></li><li><a href="module-lib_core_trace_replay.html">lib/core/trace/replay</a></li><li><a href="module-lib_core_trace_resource.html">lib/core/trace/resource</a></li><li><a href="module-lib_core_trace_schema.html">lib/core/trace/schema</a></li><li><a href="module-lib_core_trace_store.html">lib/core/trace/store</a></li><li><a href="module-lib_core_trace_tracer.html">lib/core/trace/tracer</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxGuard.html">AvenxGuard</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DisposalScope.html">DisposalScope</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li><li><a href="module-lib_core_trace_recorder.TraceRecorder.html">TraceRecorder</a></li><li><a href="module-lib_core_trace_redact.Redactor.html">Redactor</a></li><li><a href="module-lib_core_trace_tracer-Tracer.html">Tracer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#CONFIG_SCHEMA">CONFIG_SCHEMA</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#DIAGNOSTIC_CATALOGUE">DIAGNOSTIC_CATALOGUE</a></li><li><a href="global.html#FUNCTION_CONSTRUCTORS">FUNCTION_CONSTRUCTORS</a></li><li><a href="global.html#IMPURE_PATTERNS">IMPURE_PATTERNS</a></li><li><a href="global.html#INSTANCE_API_KEYS">INSTANCE_API_KEYS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#IS_BRIDGE">IS_BRIDGE</a></li><li><a href="global.html#LIVE_REGION_ID">LIVE_REGION_ID</a></li><li><a href="global.html#MAX_TRACE_BYTES">MAX_TRACE_BYTES</a></li><li><a href="global.html#NAMESPACE_GLOBAL">NAMESPACE_GLOBAL</a></li><li><a href="global.html#NON_DETERMINISTIC_PATTERNS">NON_DETERMINISTIC_PATTERNS</a></li><li><a href="global.html#PROTECTED_PROTOTYPES">PROTECTED_PROTOTYPES</a></li><li><a href="global.html#PUBLIC_GLOBALS">PUBLIC_GLOBALS</a></li><li><a href="global.html#RESERVED_KEYS">RESERVED_KEYS</a></li><li><a href="global.html#RUNTIME_SPECIFIER">RUNTIME_SPECIFIER</a></li><li><a href="global.html#SET_NAME">SET_NAME</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#actionLabel">actionLabel</a></li><li><a href="global.html#activeScope">activeScope</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#age">age</a></li><li><a href="global.html#analyzeBridge">analyzeBridge</a></li><li><a href="global.html#analyzeBridgeFile">analyzeBridgeFile</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#announce">announce</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#assertNotFunctionConstructor">assertNotFunctionConstructor</a></li><li><a href="global.html#assertNotProtectedPrototype">assertNotProtectedPrototype</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#bridge">bridge</a></li><li><a href="global.html#bridgeBindingName">bridgeBindingName</a></li><li><a href="global.html#bridgeNameFromFile">bridgeNameFromFile</a></li><li><a href="global.html#buildEventNode">buildEventNode</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#byJobId">byJobId</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#clearExpressionCache">clearExpressionCache</a></li><li><a href="global.html#cloneInitial">cloneInitial</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#composeBundleSourceMap">composeBundleSourceMap</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createInterpolationRegex">createInterpolationRegex</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createRecursiveWatcherFallback">createRecursiveWatcherFallback</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#declaredMembers">declaredMembers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#defineBridgeName">defineBridgeName</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#describe">describe</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#emitBridge">emitBridge</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#explainDiagnostic">explainDiagnostic</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractEmittedEvents">extractEmittedEvents</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractRoutesMap">extractRoutesMap</a></li><li><a href="global.html#extractSubscriptions">extractSubscriptions</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#failProcess">failProcess</a></li><li><a href="global.html#findBridgeImports">findBridgeImports</a></li><li><a href="global.html#findComponentSource">findComponentSource</a></li><li><a href="global.html#findDefinitionBrace">findDefinitionBrace</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushDepth">flushDepth</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#flushPromises">flushPromises</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#generateTemplateSourceMap">generateTemplateSourceMap</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getDiagnostic">getDiagnostic</a></li><li><a href="global.html#getExpressionCacheStats">getExpressionCacheStats</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOrCreateLiveRegion">getOrCreateLiveRegion</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getScope">getScope</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isBridge">isBridge</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isComponentUsed">isComponentUsed</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isInsideRoot">isInsideRoot</a></li><li><a href="global.html#isReactive">isReactive</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#loadSidecar">loadSidecar</a></li><li><a href="global.html#manageFocus">manageFocus</a></li><li><a href="global.html#markRaw">markRaw</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maskSecret">maskSecret</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#normalizeCode">normalizeCode</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#onScopeDispose">onScopeDispose</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseImports">parseImports</a></li><li><a href="global.html#parseMember">parseMember</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseObjectMembers">parseObjectMembers</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#printNoTraces">printNoTraces</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readEnvFileMeta">readEnvFileMeta</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportFatal">reportFatal</a></li><li><a href="global.html#reportRebuildFailure">reportRebuildFailure</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveBridgeSpecifier">resolveBridgeSpecifier</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolveMode">resolveMode</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#resolveRequestPath">resolveRequestPath</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runEnv">runEnv</a></li><li><a href="global.html#runHook">runHook</a></li><li><a href="global.html#runInScope">runInScope</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runTrace">runTrace</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#scanObjectLiteral">scanObjectLiteral</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setExpressionCacheCapacity">setExpressionCacheCapacity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#shouldGenerateTest">shouldGenerateTest</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#suggestCodes">suggestCodes</a></li><li><a href="global.html#suggestName">suggestName</a></li><li><a href="global.html#toKebabCase">toKebabCase</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#toRaw">toRaw</a></li><li><a href="global.html#traceExport">traceExport</a></li><li><a href="global.html#traceList">traceList</a></li><li><a href="global.html#tracePrune">tracePrune</a></li><li><a href="global.html#traceView">traceView</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#untracked">untracked</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchDirectory">watchDirectory</a></li><li><a href="global.html#watchEffect">watchEffect</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Aug 28 2026 18:15:28 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

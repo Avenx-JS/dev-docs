@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/core/expression/parser.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/core/expression/parser.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @file parser.js
+ * @description A JavaScript expression parser for Avenx template expressions.
+ *
+ * ## Why Avenx needs its own
+ *
+ * Template expressions used to be handed straight to the engine:
+ *
+ * ```js
+ * new Function(`with(this) { return (${expression}) }`)
+ * ```
+ *
+ * Two consequences followed from that line, and neither could be fixed while
+ * it stood.
+ *
+ * **`unsafe-eval` was structural.** Any Content-Security-Policy without
+ * `'unsafe-eval'` stopped the framework working, which excludes it from
+ * regulated environments, browser extensions, and a good many default
+ * enterprise policies.
+ *
+ * **The sandbox was not a boundary.** `AvenxSandbox` wrapped values that
+ * reached an expression *through the scope* and blocked the literal identifiers
+ * `constructor`, `__proto__` and `prototype` with a regular expression over the
+ * source text. An object created *inside* the expression never passed through
+ * the scope, so it was never wrapped, and the text check fell to string
+ * concatenation:
+ *
+ * ```js
+ * ({})['const'+'ructor']['const'+'ructor']('return 1')()   // executed
+ * ```
+ *
+ * There is no version of a source-text blacklist that closes that. The value
+ * being guarded is produced by the engine, inside code the guard has already
+ * handed over.
+ *
+ * ## What parsing changes
+ *
+ * Once Avenx holds the AST, it decides what every operation means. A member
+ * access is a call into {@link module:lib/core/expression/evaluator}, with the
+ * property key already resolved — so `x['const'+'ructor']` and `x.constructor`
+ * arrive at the same check, because by then they are the same string. Nothing
+ * is handed to the engine as code, so nothing needs `unsafe-eval`.
+ *
+ * ## Scope
+ *
+ * This parses the expression language Avenx templates use — everything up to
+ * and including arrow functions, which templates need for `items.filter(i =>
+ * i.done)`. It is not a full ECMAScript parser and does not try to be:
+ * statements, classes, generators, `async`/`await`, destructuring patterns and
+ * regular-expression literals are out of scope. An expression it cannot parse
+ * raises {@link ExpressionParseError} rather than guessing, and the caller
+ * decides what to do about it.
+ * @module lib/core/expression/parser
+ */
+
+/**
+ * Raised when an expression is outside the supported language.
+ */
+export class ExpressionParseError extends Error {
+  /**
+   * @param {string} message - What went wrong.
+   * @param {number} position - Character offset in the expression.
+   * @param {string} source - The expression being parsed.
+   */
+  constructor(message, position, source) {
+    super(message);
+    this.name = 'ExpressionParseError';
+    /** @type {number} */
+    this.position = position;
+    /** @type {string} */
+    this.source = source;
+  }
+}
+
+/**
+ * Binary operator precedence, higher binds tighter.
+ * @type {Object&lt;string, number>}
+ */
+const BINARY_PRECEDENCE = {
+  '??': 1,
+  '||': 2,
+  '&amp;&amp;': 3,
+  '|': 4,
+  '^': 5,
+  '&amp;': 6,
+  '==': 7, '!=': 7, '===': 7, '!==': 7,
+  '&lt;': 8, '>': 8, '&lt;=': 8, '>=': 8, 'in': 8, 'instanceof': 8,
+  '&lt;&lt;': 9, '>>': 9, '>>>': 9,
+  '+': 10, '-': 10,
+  '*': 11, '/': 11, '%': 11,
+  '**': 12,
+};
+
+/**
+ * Operators sorted longest-first, so `>>>=` is matched before `>>>`.
+ * @type {string[]}
+ */
+const PUNCTUATORS = [
+  '>>>=', '===', '!==', '**=', '&lt;&lt;=', '>>=', '&amp;&amp;=', '||=', '??=', '...', '>>>',
+  '=>', '==', '!=', '&lt;=', '>=', '&amp;&amp;', '||', '??', '?.', '++', '--', '**',
+  '+=', '-=', '*=', '/=', '%=', '&amp;=', '|=', '^=', '&lt;&lt;', '>>',
+  '{', '}', '(', ')', '[', ']', ';', ',', '&lt;', '>', '+', '-', '*', '/', '%',
+  '&amp;', '|', '^', '!', '~', '?', ':', '=', '.',
+];
+
+/**
+ * Assignment operators.
+ * @type {Set&lt;string>}
+ */
+const ASSIGNMENT_OPERATORS = new Set([
+  '=', '+=', '-=', '*=', '/=', '%=', '**=', '&lt;&lt;=', '>>=', '>>>=', '&amp;=', '|=', '^=', '&amp;&amp;=', '||=', '??=',
+]);
+
+/**
+ * Keywords that are values rather than identifiers.
+ * @type {Object&lt;string, any>}
+ */
+const LITERAL_KEYWORDS = {
+  true: true,
+  false: false,
+  null: null,
+  undefined: undefined,
+};
+
+/**
+ * Prefix operators.
+ * @type {Set&lt;string>}
+ */
+const UNARY_OPERATORS = new Set(['!', '-', '+', '~', 'typeof', 'void']);
+
+/**
+ * Whether a character can start an identifier.
+ * @param {string} ch - A single character.
+ * @returns {boolean} True when it can begin an identifier.
+ */
+function isIdentStart(ch) {
+  return !!ch &amp;&amp; /[A-Za-z_$]/.test(ch);
+}
+
+/**
+ * Whether a character can continue an identifier.
+ * @param {string} ch - A single character.
+ * @returns {boolean} True when it can continue an identifier.
+ */
+function isIdentPart(ch) {
+  return !!ch &amp;&amp; /[\w$]/.test(ch);
+}
+
+/**
+ * Turns an expression into tokens.
+ *
+ * Template literals are tokenised whole and re-parsed by the parser, because
+ * their `${}` holes contain expressions and nesting them in the tokenizer would
+ * require a second stack for no benefit.
+ * @param {string} source - The expression source.
+ * @returns {Array&lt;object>} The token stream, terminated by an `eof` token.
+ * @throws {ExpressionParseError} On an unterminated string or unknown character.
+ */
+export function tokenize(source) {
+  const tokens = [];
+  let i = 0;
+
+  while (i &lt; source.length) {
+    const ch = source[i];
+
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+      i++;
+      continue;
+    }
+
+    // Comments are legal inside an action body and harmless in an expression.
+    if (ch === '/' &amp;&amp; source[i + 1] === '/') {
+      while (i &lt; source.length &amp;&amp; source[i] !== '\n') i++;
+      continue;
+    }
+    if (ch === '/' &amp;&amp; source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2);
+      i = end === -1 ? source.length : end + 2;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      const start = i;
+      i++;
+      let value = '';
+      let closed = false;
+      while (i &lt; source.length) {
+        const c = source[i];
+        if (c === '\\') {
+          value += unescapeChar(source, i);
+          i += escapeLength(source, i);
+          continue;
+        }
+        if (c === ch) {
+          i++;
+          closed = true;
+          break;
+        }
+        value += c;
+        i++;
+      }
+      if (!closed) {
+        throw new ExpressionParseError('Unterminated string literal', start, source);
+      }
+      tokens.push({ type: 'string', value, start });
+      continue;
+    }
+
+    if (ch === '`') {
+      const start = i;
+      const raw = readTemplateLiteral(source, i);
+      i = raw.end;
+      tokens.push({ type: 'template', value: raw.text, start });
+      continue;
+    }
+
+    if (/[0-9]/.test(ch) || (ch === '.' &amp;&amp; /[0-9]/.test(source[i + 1]))) {
+      const start = i;
+      while (i &lt; source.length &amp;&amp; /[0-9a-fA-FxXoObBeE._]/.test(source[i])) {
+        // An exponent sign is part of the number; a following `-` otherwise is not.
+        if ((source[i] === 'e' || source[i] === 'E') &amp;&amp; (source[i + 1] === '+' || source[i + 1] === '-')) {
+          i += 2;
+          continue;
+        }
+        i++;
+      }
+      const text = source.slice(start, i).replace(/_/g, '');
+      const value = Number(text);
+      if (Number.isNaN(value) &amp;&amp; text.toLowerCase() !== 'nan') {
+        throw new ExpressionParseError(`Invalid number "${text}"`, start, source);
+      }
+      tokens.push({ type: 'number', value, start });
+      continue;
+    }
+
+    if (isIdentStart(ch)) {
+      const start = i;
+      while (i &lt; source.length &amp;&amp; isIdentPart(source[i])) i++;
+      tokens.push({ type: 'name', value: source.slice(start, i), start });
+      continue;
+    }
+
+    const punctuator = PUNCTUATORS.find((p) => source.startsWith(p, i));
+    if (punctuator) {
+      tokens.push({ type: 'punct', value: punctuator, start: i });
+      i += punctuator.length;
+      continue;
+    }
+
+    throw new ExpressionParseError(`Unexpected character "${ch}"`, i, source);
+  }
+
+  tokens.push({ type: 'eof', value: null, start: source.length });
+  return tokens;
+}
+
+/**
+ * How many source characters an escape sequence occupies.
+ * @param {string} source - The source.
+ * @param {number} i - Offset of the backslash.
+ * @returns {number} The sequence length including the backslash.
+ */
+function escapeLength(source, i) {
+  const next = source[i + 1];
+  if (next === 'u') {
+    return source[i + 2] === '{' ? source.indexOf('}', i) - i + 1 : 6;
+  }
+  if (next === 'x') return 4;
+  return 2;
+}
+
+/**
+ * Resolves an escape sequence to the character it denotes.
+ * @param {string} source - The source.
+ * @param {number} i - Offset of the backslash.
+ * @returns {string} The unescaped character.
+ */
+function unescapeChar(source, i) {
+  const next = source[i + 1];
+  switch (next) {
+    case 'n': return '\n';
+    case 't': return '\t';
+    case 'r': return '\r';
+    case 'b': return '\b';
+    case 'f': return '\f';
+    case 'v': return '\v';
+    case '0': return '\0';
+    case 'x': return String.fromCharCode(parseInt(source.slice(i + 2, i + 4), 16));
+    case 'u': {
+      if (source[i + 2] === '{') {
+        const close = source.indexOf('}', i);
+        return String.fromCodePoint(parseInt(source.slice(i + 3, close), 16));
+      }
+      return String.fromCharCode(parseInt(source.slice(i + 2, i + 6), 16));
+    }
+    default: return next;
+  }
+}
+
+/**
+ * Reads a template literal, tracking nested braces and strings inside holes.
+ * @param {string} source - The source.
+ * @param {number} start - Offset of the opening backtick.
+ * @returns {{text: string, end: number}} The literal text and the offset after it.
+ * @throws {ExpressionParseError} When the literal is unterminated.
+ */
+function readTemplateLiteral(source, start) {
+  let i = start + 1;
+  while (i &lt; source.length) {
+    const ch = source[i];
+    if (ch === '\\') {
+      i += 2;
+      continue;
+    }
+    if (ch === '`') {
+      return { text: source.slice(start + 1, i), end: i + 1 };
+    }
+    if (ch === '$' &amp;&amp; source[i + 1] === '{') {
+      let depth = 1;
+      i += 2;
+      while (i &lt; source.length &amp;&amp; depth > 0) {
+        if (source[i] === '{') depth++;
+        else if (source[i] === '}') depth--;
+        else if (source[i] === '"' || source[i] === "'" || source[i] === '`') {
+          const quote = source[i];
+          i++;
+          while (i &lt; source.length &amp;&amp; source[i] !== quote) {
+            if (source[i] === '\\') i++;
+            i++;
+          }
+        }
+        i++;
+      }
+      continue;
+    }
+    i++;
+  }
+  throw new ExpressionParseError('Unterminated template literal', start, source);
+}
+
+/**
+ * Parses a semicolon-separated run of expression statements.
+ *
+ * Most inline handlers and short action bodies are one or more expressions:
+ * `count++`, `busy = true; count++`, `state.text = event.target.value`. Those
+ * take the AST path and need no eval. A body with real statement syntax --
+ * `if`, `for`, `return`, a declaration -- is not an expression program and
+ * raises, so the caller falls back.
+ * @param {string} source - The statement source.
+ * @returns {object} A Program node.
+ * @throws {ExpressionParseError} When the source is not a run of expressions.
+ */
+export function parseExpressionProgram(source) {
+  const parser = new Parser(source);
+  const body = [];
+
+  for (;;) {
+    while (parser.eat(';')) {
+      // Empty statement.
+    }
+    if (parser.peek().type === 'eof') break;
+    body.push(parser.parseExpressionStatement());
+    if (parser.eat(';')) continue;
+    break;
+  }
+
+  parser.expectEnd();
+  return { type: 'Program', body };
+}
+
+/**
+ * Parses an expression into an AST.
+ * @param {string} source - The expression source.
+ * @returns {object} The root AST node.
+ * @throws {ExpressionParseError} When the source is outside the supported language.
+ */
+export function parseExpression(source) {
+  const parser = new Parser(source);
+  const node = parser.parseExpressionStatement();
+  parser.expectEnd();
+  return node;
+}
+
+/**
+ * A recursive-descent parser over a token stream.
+ */
+class Parser {
+  /**
+   * @param {string} source - The expression source.
+   */
+  constructor(source) {
+    /** @type {string} */
+    this.source = source;
+    /** @type {Array&lt;object>} */
+    this.tokens = tokenize(source);
+    /** @type {number} */
+    this.index = 0;
+  }
+
+  /**
+   * The token at the cursor.
+   * @returns {object} The current token.
+   */
+  peek() {
+    return this.tokens[this.index];
+  }
+
+  /**
+   * Advances past the current token.
+   * @returns {object} The token consumed.
+   */
+  next() {
+    return this.tokens[this.index++];
+  }
+
+  /**
+   * Whether the current token is a given punctuator.
+   * @param {string} value - The punctuator.
+   * @returns {boolean} True when it matches.
+   */
+  atPunct(value) {
+    const token = this.peek();
+    return token.type === 'punct' &amp;&amp; token.value === value;
+  }
+
+  /**
+   * Whether the current token is a given keyword.
+   * @param {string} value - The keyword.
+   * @returns {boolean} True when it matches.
+   */
+  atName(value) {
+    const token = this.peek();
+    return token.type === 'name' &amp;&amp; token.value === value;
+  }
+
+  /**
+   * Consumes a punctuator if present.
+   * @param {string} value - The punctuator.
+   * @returns {boolean} Whether it was consumed.
+   */
+  eat(value) {
+    if (this.atPunct(value)) {
+      this.index++;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Consumes a punctuator, or fails.
+   * @param {string} value - The punctuator.
+   * @throws {ExpressionParseError} When the token does not match.
+   */
+  expect(value) {
+    if (!this.eat(value)) {
+      const token = this.peek();
+      throw new ExpressionParseError(
+        `Expected "${value}" but found ${token.type === 'eof' ? 'end of expression' : `"${token.value}"`}`,
+        token.start,
+        this.source,
+      );
+    }
+  }
+
+  /**
+   * Asserts the token stream is exhausted.
+   * @throws {ExpressionParseError} When tokens remain.
+   */
+  expectEnd() {
+    const token = this.peek();
+    if (token.type !== 'eof') {
+      throw new ExpressionParseError(`Unexpected "${token.value}"`, token.start, this.source);
+    }
+  }
+
+  /**
+   * Parses a full expression, including the comma operator.
+   * @returns {object} The AST node.
+   */
+  parseExpressionStatement() {
+    const first = this.parseAssignment();
+    if (!this.atPunct(',')) {
+      return first;
+    }
+    const expressions = [first];
+    while (this.eat(',')) {
+      expressions.push(this.parseAssignment());
+    }
+    return { type: 'Sequence', expressions };
+  }
+
+  /**
+   * Parses an assignment, arrow function or conditional.
+   * @returns {object} The AST node.
+   */
+  parseAssignment() {
+    const arrow = this.tryParseArrow();
+    if (arrow) {
+      return arrow;
+    }
+
+    const left = this.parseConditional();
+    const token = this.peek();
+    if (token.type === 'punct' &amp;&amp; ASSIGNMENT_OPERATORS.has(token.value)) {
+      if (left.type !== 'Identifier' &amp;&amp; left.type !== 'Member') {
+        throw new ExpressionParseError('Invalid assignment target', token.start, this.source);
+      }
+      this.next();
+      const right = this.parseAssignment();
+      return { type: 'Assignment', operator: token.value, target: left, value: right };
+    }
+    return left;
+  }
+
+  /**
+   * Attempts to parse an arrow function at the cursor.
+   *
+   * Speculative because `(a, b)` is ambiguous until `=>` is or is not found.
+   * The cursor is restored when the guess is wrong, which is cheap: the token
+   * stream is already materialised.
+   * @returns {object|null} The arrow node, or null when this is not one.
+   */
+  tryParseArrow() {
+    const start = this.index;
+
+    // `x => …`
+    const token = this.peek();
+    if (token.type === 'name' &amp;&amp; !Object.prototype.hasOwnProperty.call(LITERAL_KEYWORDS, token.value)) {
+      const after = this.tokens[this.index + 1];
+      if (after &amp;&amp; after.type === 'punct' &amp;&amp; after.value === '=>') {
+        this.next();
+        this.next();
+        return { type: 'Arrow', params: [token.value], body: this.parseArrowBody() };
+      }
+    }
+
+    // `(a, b) => …`
+    if (this.atPunct('(')) {
+      const params = [];
+      this.next();
+      let valid = true;
+      if (!this.atPunct(')')) {
+        for (;;) {
+          const param = this.peek();
+          if (param.type !== 'name') {
+            valid = false;
+            break;
+          }
+          params.push(param.value);
+          this.next();
+          if (this.eat(',')) continue;
+          break;
+        }
+      }
+      if (valid &amp;&amp; this.eat(')') &amp;&amp; this.atPunct('=>')) {
+        this.next();
+        return { type: 'Arrow', params, body: this.parseArrowBody() };
+      }
+      this.index = start;
+    }
+
+    return null;
+  }
+
+  /**
+   * Parses a parenthesised parameter name list.
+   * @returns {string[]} The parameter names.
+   */
+  parseParameterList() {
+    this.expect('(');
+    const params = [];
+    if (!this.atPunct(')')) {
+      for (;;) {
+        const param = this.next();
+        if (param.type !== 'name') {
+          throw new ExpressionParseError('Expected a parameter name', param.start, this.source);
+        }
+        params.push(param.value);
+        if (this.eat(',')) continue;
+        break;
+      }
+    }
+    this.expect(')');
+    return params;
+  }
+
+  /**
+   * Parses an arrow function's body.
+   *
+   * A braced body is supported only when it is a single `return`; anything more
+   * is a statement list, which belongs to the statement evaluator rather than
+   * here.
+   * @returns {object} The body expression.
+   */
+  parseArrowBody() {
+    if (this.atPunct('{')) {
+      this.next();
+      if (this.atName('return')) {
+        this.next();
+        const value = this.parseAssignment();
+        this.eat(';');
+        this.expect('}');
+        return value;
+      }
+      if (this.eat('}')) {
+        return { type: 'Literal', value: undefined };
+      }
+      const token = this.peek();
+      throw new ExpressionParseError(
+        'An arrow function body must be an expression or a single return statement',
+        token.start,
+        this.source,
+      );
+    }
+    return this.parseAssignment();
+  }
+
+  /**
+   * Parses a conditional expression.
+   * @returns {object} The AST node.
+   */
+  parseConditional() {
+    const test = this.parseBinary(0);
+    if (this.eat('?')) {
+      const consequent = this.parseAssignment();
+      this.expect(':');
+      const alternate = this.parseAssignment();
+      return { type: 'Conditional', test, consequent, alternate };
+    }
+    return test;
+  }
+
+  /**
+   * Parses a binary expression using precedence climbing.
+   * @param {number} minPrecedence - The lowest precedence to accept.
+   * @returns {object} The AST node.
+   */
+  parseBinary(minPrecedence) {
+    let left = this.parseUnary();
+
+    for (;;) {
+      const token = this.peek();
+      const operator =
+        token.type === 'punct' || (token.type === 'name' &amp;&amp; (token.value === 'in' || token.value === 'instanceof'))
+          ? token.value
+          : null;
+      const precedence = operator ? BINARY_PRECEDENCE[operator] : undefined;
+      if (precedence === undefined || precedence &lt; minPrecedence) {
+        break;
+      }
+      this.next();
+      // `**` is right-associative; everything else is left-associative.
+      const right = this.parseBinary(operator === '**' ? precedence : precedence + 1);
+      const type = operator === '&amp;&amp;' || operator === '||' || operator === '??' ? 'Logical' : 'Binary';
+      left = { type, operator, left, right };
+    }
+
+    return left;
+  }
+
+  /**
+   * Parses a prefix expression.
+   * @returns {object} The AST node.
+   */
+  parseUnary() {
+    const token = this.peek();
+
+    if (token.type === 'punct' &amp;&amp; (token.value === '++' || token.value === '--')) {
+      this.next();
+      const argument = this.parseUnary();
+      if (argument.type !== 'Identifier' &amp;&amp; argument.type !== 'Member') {
+        throw new ExpressionParseError('Invalid update target', token.start, this.source);
+      }
+      return { type: 'Update', operator: token.value, prefix: true, argument };
+    }
+
+    if ((token.type === 'punct' || token.type === 'name') &amp;&amp; UNARY_OPERATORS.has(token.value)) {
+      this.next();
+      return { type: 'Unary', operator: token.value, argument: this.parseUnary() };
+    }
+
+    return this.parsePostfix();
+  }
+
+  /**
+   * Parses a postfix update.
+   * @returns {object} The AST node.
+   */
+  parsePostfix() {
+    const argument = this.parseCallMember();
+    const token = this.peek();
+    if (token.type === 'punct' &amp;&amp; (token.value === '++' || token.value === '--')) {
+      if (argument.type !== 'Identifier' &amp;&amp; argument.type !== 'Member') {
+        throw new ExpressionParseError('Invalid update target', token.start, this.source);
+      }
+      this.next();
+      return { type: 'Update', operator: token.value, prefix: false, argument };
+    }
+    return argument;
+  }
+
+  /**
+   * Parses the constructor of a `new` expression: member access only, no calls.
+   * @returns {object} The AST node.
+   */
+  parseNewCallee() {
+    let node = this.parsePrimary();
+    for (;;) {
+      if (this.eat('.')) {
+        const name = this.next();
+        if (name.type !== 'name') {
+          throw new ExpressionParseError('Expected a property name after "."', name.start, this.source);
+        }
+        node = {
+          type: 'Member',
+          object: node,
+          property: { type: 'Literal', value: name.value },
+          computed: false,
+          optional: false,
+        };
+        continue;
+      }
+      if (this.eat('[')) {
+        const property = this.parseExpressionStatement();
+        this.expect(']');
+        node = { type: 'Member', object: node, property, computed: true, optional: false };
+        continue;
+      }
+      break;
+    }
+    return node;
+  }
+
+  /**
+   * Parses member access and calls, left to right.
+   * @returns {object} The AST node.
+   */
+  parseCallMember() {
+    let node = this.parsePrimary();
+
+    for (;;) {
+      if (this.eat('.')) {
+        const name = this.next();
+        if (name.type !== 'name') {
+          throw new ExpressionParseError('Expected a property name after "."', name.start, this.source);
+        }
+        node = { type: 'Member', object: node, property: { type: 'Literal', value: name.value }, computed: false, optional: false };
+        continue;
+      }
+
+      if (this.atPunct('?.')) {
+        this.next();
+        if (this.atPunct('(')) {
+          node = { type: 'Call', callee: node, args: this.parseArguments(), optional: true };
+          continue;
+        }
+        if (this.atPunct('[')) {
+          this.next();
+          const property = this.parseExpressionStatement();
+          this.expect(']');
+          node = { type: 'Member', object: node, property, computed: true, optional: true };
+          continue;
+        }
+        const name = this.next();
+        if (name.type !== 'name') {
+          throw new ExpressionParseError('Expected a property name after "?."', name.start, this.source);
+        }
+        node = { type: 'Member', object: node, property: { type: 'Literal', value: name.value }, computed: false, optional: true };
+        continue;
+      }
+
+      if (this.eat('[')) {
+        const property = this.parseExpressionStatement();
+        this.expect(']');
+        node = { type: 'Member', object: node, property, computed: true, optional: false };
+        continue;
+      }
+
+      if (this.atPunct('(')) {
+        node = { type: 'Call', callee: node, args: this.parseArguments(), optional: false };
+        continue;
+      }
+
+      break;
+    }
+
+    return node;
+  }
+
+  /**
+   * Parses a parenthesised argument list.
+   * @returns {Array&lt;object>} The argument nodes.
+   */
+  parseArguments() {
+    this.expect('(');
+    const args = [];
+    if (!this.atPunct(')')) {
+      for (;;) {
+        if (this.eat('...')) {
+          args.push({ type: 'Spread', argument: this.parseAssignment() });
+        } else {
+          args.push(this.parseAssignment());
+        }
+        if (this.eat(',')) continue;
+        break;
+      }
+    }
+    this.expect(')');
+    return args;
+  }
+
+  /**
+   * Parses a primary expression.
+   * @returns {object} The AST node.
+   */
+  parsePrimary() {
+    const token = this.peek();
+
+    if (token.type === 'number' || token.type === 'string') {
+      this.next();
+      return { type: 'Literal', value: token.value };
+    }
+
+    if (token.type === 'template') {
+      this.next();
+      return this.parseTemplateParts(token.value);
+    }
+
+    if (token.type === 'name') {
+      if (Object.prototype.hasOwnProperty.call(LITERAL_KEYWORDS, token.value)) {
+        this.next();
+        return { type: 'Literal', value: LITERAL_KEYWORDS[token.value] };
+      }
+      if (token.value === 'function') {
+        // A function expression used as a callback -- `items.map(function (i) {
+        // return i.label; })` -- is ordinary template code, and refusing it
+        // would push the expression onto a path that no longer exists. The body
+        // is parsed on the same terms as an arrow's: an expression, or a single
+        // return.
+        this.next();
+        if (this.peek().type === 'name') {
+          this.next();
+        }
+        const params = this.parseParameterList();
+        return { type: 'Arrow', params, body: this.parseArrowBody(), isFunction: true };
+      }
+
+      if (token.value === 'new') {
+        this.next();
+        // The constructor is a member expression *without* calls: in
+        // `new Date().getTime()` the `new` binds to `Date`, and `.getTime()`
+        // applies to the instance. Parsing the whole call chain first and then
+        // unwrapping it gets that backwards.
+        const callee = this.parseNewCallee();
+        const args = this.atPunct('(') ? this.parseArguments() : [];
+        return { type: 'New', callee, args };
+      }
+      this.next();
+      return { type: 'Identifier', name: token.value, start: token.start };
+    }
+
+    if (this.atPunct('(')) {
+      this.next();
+      const inner = this.parseExpressionStatement();
+      this.expect(')');
+      return inner;
+    }
+
+    if (this.atPunct('[')) {
+      this.next();
+      const elements = [];
+      if (!this.atPunct(']')) {
+        for (;;) {
+          if (this.atPunct(']')) break;
+          if (this.eat('...')) {
+            elements.push({ type: 'Spread', argument: this.parseAssignment() });
+          } else {
+            elements.push(this.parseAssignment());
+          }
+          if (this.eat(',')) continue;
+          break;
+        }
+      }
+      this.expect(']');
+      return { type: 'ArrayLiteral', elements };
+    }
+
+    if (this.atPunct('{')) {
+      this.next();
+      const properties = [];
+      if (!this.atPunct('}')) {
+        for (;;) {
+          if (this.atPunct('}')) break;
+          if (this.eat('...')) {
+            properties.push({ kind: 'spread', value: this.parseAssignment() });
+            if (this.eat(',')) continue;
+            break;
+          }
+          const key = this.parseObjectKey();
+          if (this.eat(':')) {
+            properties.push({ kind: 'init', key, value: this.parseAssignment() });
+          } else if (key.computed) {
+            throw new ExpressionParseError('A computed key needs a value', this.peek().start, this.source);
+          } else {
+            // Shorthand: `{ count }`.
+            properties.push({
+              kind: 'init',
+              key,
+              value: { type: 'Identifier', name: key.node.value },
+            });
+          }
+          if (this.eat(',')) continue;
+          break;
+        }
+      }
+      this.expect('}');
+      return { type: 'ObjectLiteral', properties };
+    }
+
+    throw new ExpressionParseError(
+      token.type === 'eof' ? 'Unexpected end of expression' : `Unexpected "${token.value}"`,
+      token.start,
+      this.source,
+    );
+  }
+
+  /**
+   * Parses an object literal key.
+   * @returns {{computed: boolean, node: object}} The key description.
+   */
+  parseObjectKey() {
+    if (this.eat('[')) {
+      const node = this.parseAssignment();
+      this.expect(']');
+      return { computed: true, node };
+    }
+    const token = this.next();
+    if (token.type === 'name' || token.type === 'string' || token.type === 'number') {
+      return { computed: false, node: { type: 'Literal', value: String(token.value) } };
+    }
+    throw new ExpressionParseError('Expected a property name', token.start, this.source);
+  }
+
+  /**
+   * Splits a template literal into its static and interpolated parts.
+   * @param {string} raw - The text between the backticks.
+   * @returns {object} A TemplateLiteral node.
+   */
+  parseTemplateParts(raw) {
+    const quasis = [];
+    const expressions = [];
+    let text = '';
+    let i = 0;
+
+    while (i &lt; raw.length) {
+      if (raw[i] === '\\') {
+        text += unescapeChar(raw, i);
+        i += escapeLength(raw, i);
+        continue;
+      }
+      if (raw[i] === '$' &amp;&amp; raw[i + 1] === '{') {
+        let depth = 1;
+        let j = i + 2;
+        while (j &lt; raw.length &amp;&amp; depth > 0) {
+          if (raw[j] === '{') depth++;
+          else if (raw[j] === '}') depth--;
+          if (depth === 0) break;
+          j++;
+        }
+        quasis.push(text);
+        text = '';
+        expressions.push(parseExpression(raw.slice(i + 2, j)));
+        i = j + 1;
+        continue;
+      }
+      text += raw[i];
+      i++;
+    }
+
+    quasis.push(text);
+    return { type: 'TemplateLiteral', quasis, expressions };
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_compiler_atlas_AppModel.html">lib/compiler/atlas/AppModel</a></li><li><a href="module-lib_compiler_atlas_build.html">lib/compiler/atlas/build</a></li><li><a href="module-lib_compiler_atlas_cache.html">lib/compiler/atlas/cache</a></li><li><a href="module-lib_compiler_atlas_diagnostics.html">lib/compiler/atlas/diagnostics</a></li><li><a href="module-lib_compiler_atlas_emit.html">lib/compiler/atlas/emit</a></li><li><a href="module-lib_compiler_atlas_query.html">lib/compiler/atlas/query</a></li><li><a href="module-lib_compiler_atlas_resolve.html">lib/compiler/atlas/resolve</a></li><li><a href="module-lib_compiler_atlas_routes.html">lib/compiler/atlas/routes</a></li><li><a href="module-lib_compiler_atlas_source.html">lib/compiler/atlas/source</a></li><li><a href="module-lib_compiler_bundle_moduleScope.html">lib/compiler/bundle/moduleScope</a></li><li><a href="module-lib_compiler_bundle_validate.html">lib/compiler/bundle/validate</a></li><li><a href="module-lib_compiler_parser_declarations.html">lib/compiler/parser/declarations</a></li><li><a href="module-lib_compiler_parser_tokenizer.html">lib/compiler/parser/tokenizer</a></li><li><a href="module-lib_compiler_rewind_diagnostics.html">lib/compiler/rewind/diagnostics</a></li><li><a href="module-lib_compiler_rewind_effects.html">lib/compiler/rewind/effects</a></li><li><a href="module-lib_compiler_rewind_writeSet.html">lib/compiler/rewind/writeSet</a></li><li><a href="module-lib_compiler_runtimeImports.html">lib/compiler/runtimeImports</a></li><li><a href="module-lib_compiler_sourceMapTrace.html">lib/compiler/sourceMapTrace</a></li><li><a href="module-lib_compiler_templateEvents.html">lib/compiler/templateEvents</a></li><li><a href="module-lib_compiler_validateExpressions.html">lib/compiler/validateExpressions</a></li><li><a href="module-lib_core_expression_compile.html">lib/core/expression/compile</a></li><li><a href="module-lib_core_expression_evaluator.html">lib/core/expression/evaluator</a></li><li><a href="module-lib_core_expression_parser.html">lib/core/expression/parser</a></li><li><a href="module-lib_core_index.html">lib/core/index</a></li><li><a href="module-lib_core_reactive_journal.html">lib/core/reactive/journal</a></li><li><a href="module-lib_core_reactive_scopeProxy.html">lib/core/reactive/scopeProxy</a></li><li><a href="module-lib_core_reactive_symbols.html">lib/core/reactive/symbols</a></li><li><a href="module-lib_core_runtime_AvenxGuard.html">lib/core/runtime/AvenxGuard</a></li><li><a href="module-lib_core_runtime_atomic.html">lib/core/runtime/atomic</a></li><li><a href="module-lib_core_security_urlPolicy.html">lib/core/security/urlPolicy</a></li><li><a href="module-lib_core_testing.html">lib/core/testing</a></li><li><a href="module-lib_core_tooling.html">lib/core/tooling</a></li><li><a href="module-lib_core_tooling_loadComponent.html">lib/core/tooling/loadComponent</a></li><li><a href="module-lib_core_trace_capture.html">lib/core/trace/capture</a></li><li><a href="module-lib_core_trace_contracts.html">lib/core/trace/contracts</a></li><li><a href="module-lib_core_trace_derived.html">lib/core/trace/derived</a></li><li><a href="module-lib_core_trace_devtools.html">lib/core/trace/devtools</a></li><li><a href="module-lib_core_trace_dom.html">lib/core/trace/dom</a></li><li><a href="module-lib_core_trace_exportTest.html">lib/core/trace/exportTest</a></li><li><a href="module-lib_core_trace_format.html">lib/core/trace/format</a></li><li><a href="module-lib_core_trace_globals.html">lib/core/trace/globals</a></li><li><a href="module-lib_core_trace_reactive.html">lib/core/trace/reactive</a></li><li><a href="module-lib_core_trace_recorder.html">lib/core/trace/recorder</a></li><li><a href="module-lib_core_trace_redact.html">lib/core/trace/redact</a></li><li><a href="module-lib_core_trace_replay.html">lib/core/trace/replay</a></li><li><a href="module-lib_core_trace_resource.html">lib/core/trace/resource</a></li><li><a href="module-lib_core_trace_schema.html">lib/core/trace/schema</a></li><li><a href="module-lib_core_trace_store.html">lib/core/trace/store</a></li><li><a href="module-lib_core_trace_tracer.html">lib/core/trace/tracer</a></li><li><a href="module-lib_core_trace_transaction.html">lib/core/trace/transaction</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DisposalScope.html">DisposalScope</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li><li><a href="module-lib_compiler_atlas_AppModel.AppModel.html">AppModel</a></li><li><a href="module-lib_compiler_bundle_moduleScope.BundleScope.html">BundleScope</a></li><li><a href="module-lib_core_expression_evaluator-Frame.html">Frame</a></li><li><a href="module-lib_core_expression_parser.ExpressionParseError.html">ExpressionParseError</a></li><li><a href="module-lib_core_expression_parser-Parser.html">Parser</a></li><li><a href="module-lib_core_reactive_journal.JournalFrame.html">JournalFrame</a></li><li><a href="module-lib_core_reactive_journal-Journal.html">Journal</a></li><li><a href="module-lib_core_runtime_AvenxGuard.AvenxGuard.html">AvenxGuard</a></li><li><a href="module-lib_core_runtime_AvenxGuard.GuardContext.html">GuardContext</a></li><li><a href="module-lib_core_trace_recorder.TraceRecorder.html">TraceRecorder</a></li><li><a href="module-lib_core_trace_redact.Redactor.html">Redactor</a></li><li><a href="module-lib_core_trace_tracer-Tracer.html">Tracer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#ATOMIC_VALUE">ATOMIC_VALUE</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#BUILTIN_TAGS">BUILTIN_TAGS</a></li><li><a href="global.html#CONFIG_SCHEMA">CONFIG_SCHEMA</a></li><li><a href="global.html#CONFLICT_POLICIES">CONFLICT_POLICIES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#DIAGNOSTIC_CATALOGUE">DIAGNOSTIC_CATALOGUE</a></li><li><a href="global.html#FUNCTION_CONSTRUCTORS">FUNCTION_CONSTRUCTORS</a></li><li><a href="global.html#INSTANCE_API_KEYS">INSTANCE_API_KEYS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#IS_BRIDGE">IS_BRIDGE</a></li><li><a href="global.html#KNOWN_ELEMENTS">KNOWN_ELEMENTS</a></li><li><a href="global.html#LIVE_REGION_ID">LIVE_REGION_ID</a></li><li><a href="global.html#MAX_TRACE_BYTES">MAX_TRACE_BYTES</a></li><li><a href="global.html#NAMESPACE_GLOBAL">NAMESPACE_GLOBAL</a></li><li><a href="global.html#PROTECTED_PROTOTYPES">PROTECTED_PROTOTYPES</a></li><li><a href="global.html#PUBLIC_GLOBALS">PUBLIC_GLOBALS</a></li><li><a href="global.html#RESERVED_KEYS">RESERVED_KEYS</a></li><li><a href="global.html#RUNTIME_SPECIFIER">RUNTIME_SPECIFIER</a></li><li><a href="global.html#SET_NAME">SET_NAME</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#actionLabel">actionLabel</a></li><li><a href="global.html#activeScope">activeScope</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#age">age</a></li><li><a href="global.html#analyzeBridge">analyzeBridge</a></li><li><a href="global.html#analyzeBridgeFile">analyzeBridgeFile</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#announce">announce</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#assertNotFunctionConstructor">assertNotFunctionConstructor</a></li><li><a href="global.html#assertNotProtectedPrototype">assertNotProtectedPrototype</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blankComments">blankComments</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#bridge">bridge</a></li><li><a href="global.html#bridgeBindingName">bridgeBindingName</a></li><li><a href="global.html#bridgeNameFromFile">bridgeNameFromFile</a></li><li><a href="global.html#buildAstScope">buildAstScope</a></li><li><a href="global.html#buildAtomicSpec">buildAtomicSpec</a></li><li><a href="global.html#buildEventNode">buildEventNode</a></li><li><a href="global.html#buildModel">buildModel</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#byJobId">byJobId</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#clearExpressionCache">clearExpressionCache</a></li><li><a href="global.html#cloneInitial">cloneInitial</a></li><li><a href="global.html#collectSemantics">collectSemantics</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#composeBundleSourceMap">composeBundleSourceMap</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createInterpolationRegex">createInterpolationRegex</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createRecursiveWatcherFallback">createRecursiveWatcherFallback</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#declarationCache">declarationCache</a></li><li><a href="global.html#declaredMembers">declaredMembers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#defineBridgeName">defineBridgeName</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#describe">describe</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#edgeLabel">edgeLabel</a></li><li><a href="global.html#emitBridge">emitBridge</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#explainDiagnostic">explainDiagnostic</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractEmittedEvents">extractEmittedEvents</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractSubscriptions">extractSubscriptions</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#failProcess">failProcess</a></li><li><a href="global.html#findBridgeImports">findBridgeImports</a></li><li><a href="global.html#findComponentSource">findComponentSource</a></li><li><a href="global.html#findDefinitionBrace">findDefinitionBrace</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushDepth">flushDepth</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#flushPromises">flushPromises</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#generateTemplateSourceMap">generateTemplateSourceMap</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getDiagnostic">getDiagnostic</a></li><li><a href="global.html#getExpressionCacheStats">getExpressionCacheStats</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOrCreateLiveRegion">getOrCreateLiveRegion</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getScope">getScope</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDependentOnPath">hasDependentOnPath</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isBridge">isBridge</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isDeniedProjectPath">isDeniedProjectPath</a></li><li><a href="global.html#isInsideRoot">isInsideRoot</a></li><li><a href="global.html#isReactive">isReactive</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#isUnused">isUnused</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#loadSidecar">loadSidecar</a></li><li><a href="global.html#manageFocus">manageFocus</a></li><li><a href="global.html#markRaw">markRaw</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maskSecret">maskSecret</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#memberBodySpan">memberBodySpan</a></li><li><a href="global.html#memberParams">memberParams</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#normalizeCode">normalizeCode</a></li><li><a href="global.html#numericFlag">numericFlag</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#onScopeDispose">onScopeDispose</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseImports">parseImports</a></li><li><a href="global.html#parseMember">parseMember</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseObjectMembers">parseObjectMembers</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#parserInstance">parserInstance</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#positional">positional</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#printNoTraces">printNoTraces</a></li><li><a href="global.html#printTree">printTree</a></li><li><a href="global.html#printUnresolved">printUnresolved</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readDeclarations">readDeclarations</a></li><li><a href="global.html#readEnvFileMeta">readEnvFileMeta</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportAmbiguous">reportAmbiguous</a></li><li><a href="global.html#reportFatal">reportFatal</a></li><li><a href="global.html#reportRebuildFailure">reportRebuildFailure</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveBridgeSpecifier">resolveBridgeSpecifier</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolveMode">resolveMode</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#resolveRequestPath">resolveRequestPath</a></li><li><a href="global.html#runAtlas">runAtlas</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runEnv">runEnv</a></li><li><a href="global.html#runHook">runHook</a></li><li><a href="global.html#runInScope">runInScope</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runQuery">runQuery</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runTrace">runTrace</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#sanitizeUrlsIn">sanitizeUrlsIn</a></li><li><a href="global.html#scanObjectLiteral">scanObjectLiteral</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setExpressionCacheCapacity">setExpressionCacheCapacity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#sharedParser">sharedParser</a></li><li><a href="global.html#shouldGenerateTest">shouldGenerateTest</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#suggestCodes">suggestCodes</a></li><li><a href="global.html#suggestName">suggestName</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#toRaw">toRaw</a></li><li><a href="global.html#traceExport">traceExport</a></li><li><a href="global.html#traceList">traceList</a></li><li><a href="global.html#tracePrune">tracePrune</a></li><li><a href="global.html#traceView">traceView</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#untracked">untracked</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#unwrapAtomic">unwrapAtomic</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#wantsJson">wantsJson</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchDirectory">watchDirectory</a></li><li><a href="global.html#watchEffect">watchEffect</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#wrappedFunctionBodySpan">wrappedFunctionBodySpan</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Sep 07 2026 21:02:15 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/bundler/emit.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/bundler/emit.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @file emit.js
+ * @description Renders a linked module graph into one classic script.
+ *
+ * ## The output shape, and why
+ *
+ * One outer IIFE. Inside it, each module is an inner IIFE assigned to a `var`,
+ * emitted in dependency order:
+ *
+ * ```js
+ * (function () {
+ *   'use strict';
+ *   var __avx3 = (function () { var __x = {}; ...body...; return __x; })();
+ *   var __avx7 = (function () { var { thing } = __avx3; ...body...; })();
+ * })();
+ * ```
+ *
+ * `var` rather than `const` is load-bearing: `var` hoists to the top of the
+ * outer function, so a module emitted *before* its dependency — which happens
+ * exactly once per cycle — can still name it. The binding is `undefined` at
+ * that moment and holds the exports object by the time anything dereferences
+ * it, which is the same shape the language itself has across a cycle.
+ *
+ * ## Three problems this file has to get right
+ *
+ * **Live bindings.** `reactive/watcher.js` has `export let activeWatcher`, it
+ * reassigns it, and `runtime/AvenxComponent.js` reads it across the module
+ * boundary to decide whether it is inside its own render. Copying the value at
+ * import time would capture `null` forever and break that check silently. So a
+ * mutable exported binding is *hoisted out of its module* into bundle scope
+ * under its own name: the exporter's assignments and every importer's reads
+ * then resolve to one variable through the ordinary scope chain, with no
+ * identifier rewriting anywhere. Exports are exposed as getters for the same
+ * reason, so a namespace or a re-export barrel sees the current value.
+ *
+ * **Cycles.** Across the one edge that closes a cycle, the dependency's
+ * exports object does not exist yet. ES modules make exactly one guarantee
+ * there — function declarations hoist — so this emitter reproduces exactly
+ * that: a cyclic import of a function becomes a forwarder that dereferences on
+ * call, and a cyclic import of anything else is a build error, because in a
+ * browser it would be a temporal dead zone.
+ *
+ * **Line fidelity.** Every rewritten declaration is emitted on a single line
+ * and padded back to the line count it replaced, so a module's body keeps a
+ * 1:1 line correspondence with its source. That is what makes the source map
+ * exact and a production stack trace point at a line the developer wrote.
+ * @module lib/bundler/emit
+ */
+
+import path from 'path';
+
+/**
+ * Raised when a graph cannot be rendered into a correct bundle.
+ */
+export class EmitError extends Error {
+  /**
+   * @param {string} message - What cannot be emitted, and why.
+   * @param {string} [file] - The module responsible.
+   * @param {'cycle'|'live-binding-alias'|'live-binding-collision'} [kind] - Which
+   *   condition was hit, so a caller can map it onto its own diagnostics
+   *   without matching on the message text.
+   */
+  constructor(message, file = '', kind = 'cycle') {
+    super(message);
+    this.name = 'EmitError';
+    /** @type {string} */
+    this.file = file;
+    /** @type {string} */
+    this.kind = kind;
+    /** @type {Array&lt;string[]>} */
+    this.cycles = [];
+  }
+}
+
+/**
+ * Counts the lines a chunk of text occupies.
+ * @param {string} text - The text.
+ * @returns {number} Line count, minimum one.
+ */
+function lineCount(text) {
+  let lines = 1;
+  for (let i = 0; i &lt; text.length; i += 1) {
+    if (text[i] === '\n') lines += 1;
+  }
+  return lines;
+}
+
+/**
+ * Pads generated text so it occupies the same number of lines it replaced.
+ * @param {string} generated - Replacement text, expected to be one line.
+ * @param {string} original - The text being replaced.
+ * @returns {string} The replacement, newline-padded.
+ */
+function padToLines(generated, original) {
+  const want = lineCount(original);
+  const have = lineCount(generated);
+  return have >= want ? generated : generated + '\n'.repeat(want - have);
+}
+
+/**
+ * A valid JavaScript identifier for a module's exports object.
+ * @param {number} index - The module's index in emission order.
+ * @returns {string} The binding name.
+ */
+function moduleBinding(index) {
+  return `__avx${index}`;
+}
+
+/**
+ * Finds the exported bindings a module can reassign.
+ *
+ * Only `let` and `var` declarations qualify. A `const`, a `function` and a
+ * `class` binding cannot be reassigned, so copying their value at import time
+ * is indistinguishable from a live binding and costs nothing.
+ * @param {object} module - A graph module.
+ * @returns {Set&lt;string>} Names that must live at bundle scope.
+ */
+export function mutableExports(module) {
+  const names = new Set();
+  if (module.format !== 'esm') {
+    return names;
+  }
+  for (const statement of module.record.statements) {
+    if (statement.kind !== 'export-declaration') continue;
+    const text = module.source.slice(statement.bodyStart, statement.end).trimStart();
+    if (/^(let|var)\b/.test(text)) {
+      for (const name of statement.declares) {
+        names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * The local name under which a module declares an exported function.
+ *
+ * This is the question that decides whether a cyclic import is legal, so it is
+ * answered from the declaration rather than guessed from usage: only a function
+ * declaration is initialised before any module body runs, which is the one
+ * guarantee ES modules make across a cycle.
+ * @param {object} module - The exporting graph module.
+ * @param {string} exported - The exported name.
+ * @returns {string|null} The local declaration name, or null when the export is
+ *   not a function declaration.
+ */
+function functionExportLocal(module, exported) {
+  if (!module || module.format !== 'esm') {
+    return null;
+  }
+  for (const statement of module.record.statements) {
+    const isDefault = statement.kind === 'export-default';
+    if (statement.kind !== 'export-declaration' &amp;&amp; !isDefault) continue;
+    if (isDefault ? exported !== 'default' : !statement.declares.includes(exported)) continue;
+    const text = module.source.slice(statement.bodyStart, statement.end).trimStart();
+    if (/^(async\s+)?function\b/.test(text)) {
+      return isDefault ? statement.declares[0] || null : exported;
+    }
+  }
+  return null;
+}
+
+/**
+ * Renders one module's body with its declarations rewritten.
+ * @param {object} context - Emission context.
+ * @param {object} context.module - The graph module.
+ * @param {object} context.graph - The module graph.
+ * @param {Map&lt;string, number>} context.indexOf - Module id to emission index.
+ * @param {Set&lt;string>} context.hoisted - Names living at bundle scope.
+ * @param {Set&lt;string>} context.included - Module ids that reached the bundle.
+ * @param {function(string, string): string} context.slotFor - Allocates a
+ *   bundle-scope slot for a function crossing a cycle.
+ * @returns {string} The transformed module body.
+ * @throws {EmitError} When a construct cannot be rendered correctly.
+ */
+function renderEsmBody({ module, graph, indexOf, hoisted, included, slotFor }) {
+  const source = module.source;
+  const pieces = [];
+  const trailing = [];
+  let cursor = 0;
+
+  /**
+   * The bundle-scope binding for a specifier this module imports.
+   * @param {string} specifier - The specifier as written.
+   * @returns {{name: string, target: object, cyclic: boolean}} Binding details.
+   */
+  const targetOf = (specifier) => {
+    const id = module.resolved.get(specifier);
+    const target = graph.modules.get(id);
+    return {
+      name: moduleBinding(indexOf.get(id)),
+      target,
+      id,
+      cyclic: graph.isCyclicEdge(module.id, id),
+      included: included.has(id),
+    };
+  };
+
+  /**
+   * Declares one export on the module's exports object, live.
+   * @param {string} exported - The exported name.
+   * @param {string} expression - An expression yielding the current value.
+   */
+  const declareExport = (exported, expression) => {
+    trailing.push(`__avx_def(__x, ${JSON.stringify(exported)}, function () { return ${expression}; });`);
+  };
+
+  // Statement rewrites and dynamic-import rewrites are one ordered list. A
+  // dynamic import lives inside an ordinary statement, which is copied
+  // verbatim, so the two never overlap -- but they have to be applied in
+  // source order for the cursor to stay monotonic.
+  const edits = [
+    ...module.record.statements
+      .filter((statement) => statement.kind !== 'statement')
+      .map((statement) => ({ start: statement.start, end: statement.end, statement })),
+    ...module.record.dynamicImports.map((entry) => ({ start: entry.start, end: entry.end, dynamic: entry })),
+  ].sort((a, b) => a.start - b.start);
+
+  for (const edit of edits) {
+    pieces.push(source.slice(cursor, edit.start));
+    const original = source.slice(edit.start, edit.end);
+
+    if (edit.dynamic) {
+      const { name, target, included: present } = targetOf(edit.dynamic.specifier);
+      // Everything is in one chunk, so the module is already evaluated by the
+      // time anything can await it. `import()` therefore resolves immediately
+      // with the namespace, which is the correct observable behaviour for an
+      // unsplit build -- what is missing is a separate chunk, not the semantics.
+      const namespace = target &amp;&amp; target.format === 'cjs' ? `{ default: ${name} }` : name;
+      pieces.push(padToLines(present ? `Promise.resolve(${namespace})` : 'Promise.resolve({})', original));
+      cursor = edit.end;
+      continue;
+    }
+
+    const statement = edit.statement;
+    let replacement;
+
+    if (statement.kind === 'import') {
+      const entry = module.record.imports.find((item) => item.start === statement.start);
+      const { name, target, cyclic, included: present } = targetOf(entry.specifier);
+
+      if (!present) {
+        // The dependency was shaken out because nothing this module keeps uses
+        // it. Its bindings are unreachable by construction, so there is
+        // nothing to declare.
+        replacement = '';
+      } else if (entry.sideEffectOnly) {
+        // Ordering already guarantees the module ran; naming it keeps the
+        // dependency visible in the output.
+        replacement = `/* side-effect import: ${entry.specifier} */ void ${name};`;
+      } else {
+        const parts = [];
+        const plain = [];
+
+        if (entry.namespace) {
+          parts.push(`var ${entry.namespace} = ${name};`);
+        }
+        if (entry.defaultLocal) {
+          if (cyclic) {
+            parts.push(cyclicBinding(entry.defaultLocal, 'default', target, module, slotFor));
+          } else {
+            // A CommonJS module's default export is its `module.exports`
+            // object itself, which is what `__avxN` already holds.
+            const value = target &amp;&amp; target.format === 'cjs' ? name : `${name}.default`;
+            parts.push(`var ${entry.defaultLocal} = ${value};`);
+          }
+        }
+
+        for (const binding of entry.bindings) {
+          if (hoisted.has(binding.imported)) {
+            if (binding.imported === binding.local) {
+              // A live binding lives at bundle scope under this exact name, so
+              // the reference resolves through the scope chain and stays live.
+              // Declaring anything here would shadow it with a stale copy.
+              continue;
+            }
+            throw new EmitError(
+              `"${binding.imported}" is a live binding and cannot be imported under the alias "${binding.local}". ` +
+                'Import it under its own name so it keeps resolving to the one variable that holds it.',
+              module.id,
+              'live-binding-alias',
+            );
+          }
+          if (cyclic) {
+            parts.push(cyclicBinding(binding.local, binding.imported, target, module, slotFor));
+          } else {
+            plain.push(binding);
+          }
+        }
+
+        if (plain.length > 0) {
+          const pattern = plain
+            .map((binding) => (binding.imported === binding.local ? binding.local : `${binding.imported}: ${binding.local}`))
+            .join(', ');
+          parts.push(`var { ${pattern} } = ${name};`);
+        }
+        replacement = parts.join(' ');
+      }
+    } else if (statement.kind === 'export-declaration') {
+      const body = source.slice(statement.bodyStart, statement.end);
+      const isMutable = /^\s*(let|var)\b/.test(body);
+      if (isMutable) {
+        // Hoisted to bundle scope: drop the declaration keyword so the
+        // assignment targets the outer variable rather than a module-local
+        // shadow of it.
+        replacement = body.replace(/^(\s*)(let|var)\s+/, '$1');
+        if (!/=/.test(replacement)) {
+          replacement = '';
+        }
+      } else {
+        replacement = body;
+      }
+      for (const name of statement.declares) {
+        declareExport(name, name);
+      }
+    } else if (statement.kind === 'export-default') {
+      const body = source.slice(statement.bodyStart, statement.end);
+      if (statement.declares.length > 0) {
+        replacement = body;
+        declareExport('default', statement.declares[0]);
+      } else {
+        const expression = body.replace(/;\s*$/, '');
+        replacement = `var __avx_default = ${expression};`;
+        declareExport('default', '__avx_default');
+      }
+    } else if (statement.kind === 'export-list') {
+      for (const entry of statement.entries || []) {
+        declareExport(entry.exported, entry.local);
+      }
+      replacement = '';
+    } else if (statement.kind === 'reexport') {
+      for (const entry of statement.reExportEntries || []) {
+        const { name, included: present } = targetOf(entry.specifier);
+        if (!present) continue;
+        // `export * as ns from 'm'` re-exports the namespace object itself.
+        const value = entry.imported === '*' ? name : `${name}[${JSON.stringify(entry.imported)}]`;
+        declareExport(entry.exported, value);
+      }
+      replacement = '';
+    } else if (statement.kind === 'star-reexport') {
+      const { name, target, included: present } = targetOf(statement.starSpecifier);
+      if (present &amp;&amp; target) {
+        // Expanded to explicit getters rather than a runtime copy loop: the
+        // names are known here, and a copy would freeze a live binding.
+        for (const exported of target.exportNames) {
+          if (exported === 'default' || exported === '*') continue;
+          declareExport(exported, `${name}[${JSON.stringify(exported)}]`);
+        }
+      }
+      replacement = '';
+    } else {
+      replacement = original;
+    }
+
+    pieces.push(padToLines(replacement, original));
+    cursor = statement.end;
+  }
+
+  pieces.push(source.slice(cursor));
+  if (trailing.length > 0) {
+    pieces.push(`\n${trailing.join('\n')}\n`);
+  }
+  return pieces.join('');
+}
+
+/**
+ * Builds a binding for an import that crosses a cycle.
+ *
+ * The dependency's *exports object* does not exist yet at this point — the
+ * importing module is running inside the call that will produce it — so the
+ * forwarder cannot go through it. It goes through a bundle-scope slot instead,
+ * which the exporting module fills from its hoisted function declaration before
+ * its own body runs. That is exactly the order ES modules use, so a cyclic call
+ * that works in a browser works here and one that does not, does not.
+ * @param {string} local - The local name to declare.
+ * @param {string} imported - The name being imported.
+ * @param {object} target - The exporting graph module.
+ * @param {object} importer - The importing graph module.
+ * @param {function(string, string): string} slotFor - Allocates the shared slot.
+ * @returns {string} The declaration.
+ * @throws {EmitError} When the binding cannot legally cross a cycle.
+ */
+function cyclicBinding(local, imported, target, importer, slotFor) {
+  const declared = functionExportLocal(target, imported);
+  if (!declared) {
+    throw new EmitError(
+      `"${imported}" is imported across a module cycle but is not a function declaration.\n` +
+        'Only function declarations are initialised before a module body runs, so reading anything ' +
+        'else across a cycle is a temporal dead zone in a browser too. Break the cycle, or move the ' +
+        'value behind a function.',
+      importer.id,
+    );
+  }
+  const slot = slotFor(target.id, imported);
+  return `var ${local} = function () { return ${slot}.apply(this, arguments); };`;
+}
+
+/**
+ * Wraps a CommonJS module so the bundle can evaluate it.
+ * @param {object} context - Emission context.
+ * @param {object} context.module - The graph module.
+ * @param {Map&lt;string, number>} context.indexOf - Module id to emission index.
+ * @param {Set&lt;string>} context.included - Module ids in the bundle.
+ * @returns {string} The wrapped body.
+ */
+function renderCjsBody({ module, indexOf, included }) {
+  const cases = [];
+  for (const [specifier, id] of module.resolved) {
+    if (!included.has(id)) continue;
+    cases.push(`if (id === ${JSON.stringify(specifier)}) return ${moduleBinding(indexOf.get(id))};`);
+  }
+
+  return [
+    'var module = { exports: {} }, exports = module.exports;',
+    `function require(id) { ${cases.join(' ')} throw new Error('Cannot find module ' + id); }`,
+    'void require;',
+    module.source,
+    'return module.exports;',
+  ].join('\n');
+}
+
+/**
+ * The prelude every bundle carries.
+ *
+ * One helper, five lines. A module system that needs more machinery than this
+ * at runtime has moved work out of the build that belonged in it.
+ * @type {string}
+ */
+const PRELUDE = `var __avx_def = function (target, name, get) {
+  Object.defineProperty(target, name, { enumerable: true, configurable: true, get: get });
+};`;
+
+/**
+ * Renders a linked graph into a single classic script.
+ * @param {object} options - Emission options.
+ * @param {object} options.graph - The module graph.
+ * @param {string[]} options.order - Module ids in emission order.
+ * @param {Set&lt;string>} [options.included] - Modules that survived tree shaking.
+ * @param {string} [options.banner] - Text placed before the outer IIFE.
+ * @param {string} [options.footer] - Text placed inside the outer IIFE, after
+ *   every module, where it can read `__avx_entry`.
+ * @param {string} [options.rootDir] - Root for source-map paths.
+ * @param {boolean} [options.sourceMap] - Whether to build a source map.
+ * @param {string} [options.file] - Output file name, for the map.
+ * @returns {{code: string, map: object|null, modules: number}} The bundle.
+ * @throws {EmitError} When the graph cannot be rendered correctly.
+ */
+export function emitBundle({
+  graph,
+  order,
+  included = null,
+  banner = '',
+  footer = '',
+  rootDir = process.cwd(),
+  sourceMap = false,
+  file = 'bundle.js',
+}) {
+  const present = included || new Set(order);
+  const emitted = order.filter((id) => present.has(id));
+  const indexOf = new Map(emitted.map((id, index) => [id, index]));
+
+  // Every mutable exported binding in the bundle lives at bundle scope, so the
+  // exporter's writes and the importers' reads are the same variable.
+  const hoisted = new Set();
+  const hoistedOwner = new Map();
+  for (const id of emitted) {
+    const module = graph.modules.get(id);
+    for (const name of mutableExports(module)) {
+      if (hoistedOwner.has(name) &amp;&amp; hoistedOwner.get(name) !== id) {
+        throw new EmitError(
+          `two modules export a mutable binding named "${name}":\n  ${hoistedOwner.get(name)}\n  ${id}\n` +
+            'A live binding is hoisted to bundle scope under its own name, so the two would collide. ' +
+            'Rename one of them.',
+          id,
+          'live-binding-collision',
+        );
+      }
+      hoisted.add(name);
+      hoistedOwner.set(name, id);
+    }
+  }
+
+  // Functions reached across a cycle are published into a bundle-scope slot by
+  // the module that declares them, before its body runs. `slots` is keyed by
+  // module id and export name so one function is published once however many
+  // cyclic importers it has.
+  /** @type {Map&lt;string, string>} */
+  const slots = new Map();
+  /** @type {Map&lt;string, Array&lt;{slot: string, local: string}>>} */
+  const slotsByModule = new Map();
+  const slotFor = (moduleId, exported) => {
+    const key = `${moduleId}\u0000${exported}`;
+    const existing = slots.get(key);
+    if (existing) return existing;
+    const slot = `__avx_fn${slots.size}`;
+    slots.set(key, slot);
+    const declared = functionExportLocal(graph.modules.get(moduleId), exported);
+    if (!slotsByModule.has(moduleId)) slotsByModule.set(moduleId, []);
+    slotsByModule.get(moduleId).push({ slot, local: declared });
+    return slot;
+  };
+
+  const lines = [];
+  /** @type {Array&lt;{module: string, outputLine: number, lines: number}>} */
+  const segments = [];
+
+  const push = (text) => {
+    lines.push(text);
+  };
+
+  if (banner) push(banner);
+  push('(function () {');
+  push("'use strict';");
+  push(PRELUDE);
+  if (hoisted.size > 0) {
+    push(`var ${[...hoisted].join(', ')};`);
+  }
+
+  const currentLine = () => lines.join('\n').split('\n').length;
+
+  let bodies;
+  try {
+    bodies = emitted.map((id) => {
+      const module = graph.modules.get(id);
+      return {
+        id,
+        module,
+        body:
+          module.format === 'cjs'
+            ? renderCjsBody({ module, indexOf, included: present })
+            : renderEsmBody({ module, graph, indexOf, hoisted, included: present, slotFor }),
+      };
+    });
+  } catch (error) {
+    // The cycles travel with the error so a caller can describe the failure in
+    // its own vocabulary -- Avenx reports a cycle between two bridges as a
+    // bridge problem, which is what the developer was actually writing.
+    if (error instanceof EmitError) {
+      error.cycles = graph.cycles;
+    }
+    throw error;
+  }
+
+  if (slots.size > 0) {
+    push(`var ${[...slots.values()].join(', ')};`);
+  }
+
+  for (const { id, module, body } of bodies) {
+    const binding = moduleBinding(indexOf.get(id));
+    const label = module.virtual ? id : path.relative(rootDir, id);
+
+    push(`// ${label}`);
+    push(`var ${binding} = (function () {`);
+    push('var __x = {};');
+
+    // Published before the body, mirroring the point at which ES modules
+    // initialise a hoisted function declaration.
+    const published = slotsByModule.get(id);
+    if (published &amp;&amp; published.length > 0) {
+      push(published.map((entry) => `${entry.slot} = ${entry.local};`).join(' '));
+    }
+
+    const bodyStartLine = currentLine() + 1;
+    segments.push({ module: id, outputLine: bodyStartLine, lines: lineCount(body) });
+
+    push(body);
+    push('return __x;');
+    push('})();');
+  }
+
+  // The last entry's exports are published as `__avx_entry` inside the bundle
+  // scope. A footer -- the one that installs `globalThis.Avenx`, for instance
+  // -- needs a name for what the entry produced, and inventing one per caller
+  // would make the contract implicit.
+  const liveEntries = graph.entries.filter((entry) => present.has(entry));
+  for (const entry of liveEntries) {
+    push(`void ${moduleBinding(indexOf.get(entry))};`);
+  }
+  if (liveEntries.length > 0) {
+    push(`var __avx_entry = ${moduleBinding(indexOf.get(liveEntries[liveEntries.length - 1]))};`);
+    push('void __avx_entry;');
+  }
+
+  if (footer) push(footer);
+  push('})();');
+
+  const code = lines.join('\n') + '\n';
+  const map = sourceMap ? buildSourceMap({ graph, segments, rootDir, file }) : null;
+
+  return { code, map, modules: emitted.length };
+}
+
+/**
+ * Builds a line-level source map for an emitted bundle.
+ *
+ * Line-level rather than column-level, and exact rather than approximate: every
+ * rewritten declaration was padded back to the line count it replaced, so
+ * output line N of a module's body is source line N of that module. A stack
+ * trace from a production bundle therefore names a file and a line the
+ * developer wrote.
+ * @param {object} options - Map options.
+ * @param {object} options.graph - The module graph.
+ * @param {Array&lt;object>} options.segments - Where each module's body landed.
+ * @param {string} options.rootDir - Root for relative source paths.
+ * @param {string} options.file - The generated file name.
+ * @returns {object} A source map, version 3.
+ */
+function buildSourceMap({ graph, segments, rootDir, file }) {
+  const sources = [];
+  const sourcesContent = [];
+  const indexOfSource = new Map();
+
+  const sourceIndex = (id) => {
+    if (indexOfSource.has(id)) return indexOfSource.get(id);
+    const module = graph.modules.get(id);
+    const name = module.virtual ? id.replace(/^\s*/, '') : path.relative(rootDir, id).split(path.sep).join('/');
+    const index = sources.length;
+    sources.push(name);
+    sourcesContent.push(module.source);
+    indexOfSource.set(id, index);
+    return index;
+  };
+
+  const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const encode = (value) => {
+    let vlq = value &lt; 0 ? ((-value) &lt;&lt; 1) | 1 : value &lt;&lt; 1;
+    let out = '';
+    do {
+      let digit = vlq &amp; 31;
+      vlq >>>= 5;
+      if (vlq > 0) digit |= 32;
+      out += BASE64[digit];
+    } while (vlq > 0);
+    return out;
+  };
+
+  /** @type {Array&lt;string>} */
+  const mappingLines = [];
+  let previousSource = 0;
+  let previousSourceLine = 0;
+
+  for (const segment of segments) {
+    const index = sourceIndex(segment.module);
+    for (let line = 0; line &lt; segment.lines; line += 1) {
+      const outputLine = segment.outputLine + line - 1;
+      while (mappingLines.length &lt;= outputLine) {
+        mappingLines.push('');
+      }
+      mappingLines[outputLine] =
+        encode(0) + encode(index - previousSource) + encode(line - previousSourceLine) + encode(0);
+      previousSource = index;
+      previousSourceLine = line;
+    }
+  }
+
+  return {
+    version: 3,
+    file,
+    sources,
+    sourcesContent,
+    names: [],
+    mappings: mappingLines.join(';'),
+  };
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_bundler.html">lib/bundler</a></li><li><a href="module-lib_bundler_emit.html">lib/bundler/emit</a></li><li><a href="module-lib_bundler_graph.html">lib/bundler/graph</a></li><li><a href="module-lib_bundler_minify.html">lib/bundler/minify</a></li><li><a href="module-lib_bundler_parseModule.html">lib/bundler/parseModule</a></li><li><a href="module-lib_bundler_resolve.html">lib/bundler/resolve</a></li><li><a href="module-lib_bundler_scanner.html">lib/bundler/scanner</a></li><li><a href="module-lib_bundler_treeshake.html">lib/bundler/treeshake</a></li><li><a href="module-lib_compiler_atlas_AppModel.html">lib/compiler/atlas/AppModel</a></li><li><a href="module-lib_compiler_atlas_build.html">lib/compiler/atlas/build</a></li><li><a href="module-lib_compiler_atlas_cache.html">lib/compiler/atlas/cache</a></li><li><a href="module-lib_compiler_atlas_diagnostics.html">lib/compiler/atlas/diagnostics</a></li><li><a href="module-lib_compiler_atlas_emit.html">lib/compiler/atlas/emit</a></li><li><a href="module-lib_compiler_atlas_query.html">lib/compiler/atlas/query</a></li><li><a href="module-lib_compiler_atlas_resolve.html">lib/compiler/atlas/resolve</a></li><li><a href="module-lib_compiler_atlas_routes.html">lib/compiler/atlas/routes</a></li><li><a href="module-lib_compiler_atlas_source.html">lib/compiler/atlas/source</a></li><li><a href="module-lib_compiler_bundle_validate.html">lib/compiler/bundle/validate</a></li><li><a href="module-lib_compiler_modules.html">lib/compiler/modules</a></li><li><a href="module-lib_compiler_parser_declarations.html">lib/compiler/parser/declarations</a></li><li><a href="module-lib_compiler_parser_htmlTree.html">lib/compiler/parser/htmlTree</a></li><li><a href="module-lib_compiler_parser_tokenizer.html">lib/compiler/parser/tokenizer</a></li><li><a href="module-lib_compiler_render_compileTemplate.html">lib/compiler/render/compileTemplate</a></li><li><a href="module-lib_compiler_render_program.html">lib/compiler/render/program</a></li><li><a href="module-lib_compiler_rewind_diagnostics.html">lib/compiler/rewind/diagnostics</a></li><li><a href="module-lib_compiler_rewind_effects.html">lib/compiler/rewind/effects</a></li><li><a href="module-lib_compiler_rewind_writeSet.html">lib/compiler/rewind/writeSet</a></li><li><a href="module-lib_compiler_sourceMapTrace.html">lib/compiler/sourceMapTrace</a></li><li><a href="module-lib_compiler_templateEvents.html">lib/compiler/templateEvents</a></li><li><a href="module-lib_compiler_validateExpressions.html">lib/compiler/validateExpressions</a></li><li><a href="module-lib_core_expression_compile.html">lib/core/expression/compile</a></li><li><a href="module-lib_core_expression_evaluator.html">lib/core/expression/evaluator</a></li><li><a href="module-lib_core_expression_parser.html">lib/core/expression/parser</a></li><li><a href="module-lib_core_index.html">lib/core/index</a></li><li><a href="module-lib_core_reactive_journal.html">lib/core/reactive/journal</a></li><li><a href="module-lib_core_reactive_scopeProxy.html">lib/core/reactive/scopeProxy</a></li><li><a href="module-lib_core_reactive_symbols.html">lib/core/reactive/symbols</a></li><li><a href="module-lib_core_renderer_program_CompiledTemplate.html">lib/core/renderer/program/CompiledTemplate</a></li><li><a href="module-lib_core_renderer_program_TemplateInstance.html">lib/core/renderer/program/TemplateInstance</a></li><li><a href="module-lib_core_renderer_program_bindings.html">lib/core/renderer/program/bindings</a></li><li><a href="module-lib_core_runtime_AvenxGuard.html">lib/core/runtime/AvenxGuard</a></li><li><a href="module-lib_core_runtime_atomic.html">lib/core/runtime/atomic</a></li><li><a href="module-lib_core_security_urlPolicy.html">lib/core/security/urlPolicy</a></li><li><a href="module-lib_core_testing.html">lib/core/testing</a></li><li><a href="module-lib_core_tooling.html">lib/core/tooling</a></li><li><a href="module-lib_core_tooling_loadComponent.html">lib/core/tooling/loadComponent</a></li><li><a href="module-lib_core_trace_capture.html">lib/core/trace/capture</a></li><li><a href="module-lib_core_trace_contracts.html">lib/core/trace/contracts</a></li><li><a href="module-lib_core_trace_derived.html">lib/core/trace/derived</a></li><li><a href="module-lib_core_trace_devtools.html">lib/core/trace/devtools</a></li><li><a href="module-lib_core_trace_dom.html">lib/core/trace/dom</a></li><li><a href="module-lib_core_trace_exportTest.html">lib/core/trace/exportTest</a></li><li><a href="module-lib_core_trace_format.html">lib/core/trace/format</a></li><li><a href="module-lib_core_trace_globals.html">lib/core/trace/globals</a></li><li><a href="module-lib_core_trace_reactive.html">lib/core/trace/reactive</a></li><li><a href="module-lib_core_trace_recorder.html">lib/core/trace/recorder</a></li><li><a href="module-lib_core_trace_redact.html">lib/core/trace/redact</a></li><li><a href="module-lib_core_trace_replay.html">lib/core/trace/replay</a></li><li><a href="module-lib_core_trace_resource.html">lib/core/trace/resource</a></li><li><a href="module-lib_core_trace_schema.html">lib/core/trace/schema</a></li><li><a href="module-lib_core_trace_store.html">lib/core/trace/store</a></li><li><a href="module-lib_core_trace_tracer.html">lib/core/trace/tracer</a></li><li><a href="module-lib_core_trace_transaction.html">lib/core/trace/transaction</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DisposalScope.html">DisposalScope</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li><li><a href="module-lib_bundler_emit.EmitError.html">EmitError</a></li><li><a href="module-lib_bundler_graph.BindingError.html">BindingError</a></li><li><a href="module-lib_bundler_graph.DynamicImportError.html">DynamicImportError</a></li><li><a href="module-lib_bundler_graph.ModuleGraph.html">ModuleGraph</a></li><li><a href="module-lib_bundler_parseModule.ModuleParseError.html">ModuleParseError</a></li><li><a href="module-lib_bundler_resolve.ResolveError.html">ResolveError</a></li><li><a href="module-lib_bundler_resolve.Resolver.html">Resolver</a></li><li><a href="module-lib_bundler_scanner.CodeMask.html">CodeMask</a></li><li><a href="module-lib_compiler_atlas_AppModel.AppModel.html">AppModel</a></li><li><a href="module-lib_compiler_parser_htmlTree.HTMLNode.html">HTMLNode</a></li><li><a href="module-lib_core_expression_evaluator-Frame.html">Frame</a></li><li><a href="module-lib_core_expression_parser.ExpressionParseError.html">ExpressionParseError</a></li><li><a href="module-lib_core_expression_parser-Parser.html">Parser</a></li><li><a href="module-lib_core_reactive_journal.JournalFrame.html">JournalFrame</a></li><li><a href="module-lib_core_reactive_journal-Journal.html">Journal</a></li><li><a href="module-lib_core_renderer_program_CompiledTemplate.CompiledTemplate.html">CompiledTemplate</a></li><li><a href="module-lib_core_renderer_program_TemplateInstance.TemplateInstance.html">TemplateInstance</a></li><li><a href="module-lib_core_runtime_AvenxGuard.AvenxGuard.html">AvenxGuard</a></li><li><a href="module-lib_core_runtime_AvenxGuard.GuardContext.html">GuardContext</a></li><li><a href="module-lib_core_trace_recorder.TraceRecorder.html">TraceRecorder</a></li><li><a href="module-lib_core_trace_redact.Redactor.html">Redactor</a></li><li><a href="module-lib_core_trace_tracer-Tracer.html">Tracer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#ATOMIC_VALUE">ATOMIC_VALUE</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#BUILTIN_TAGS">BUILTIN_TAGS</a></li><li><a href="global.html#BUNDLE_SIZE_WARNING_THRESHOLD_KB">BUNDLE_SIZE_WARNING_THRESHOLD_KB</a></li><li><a href="global.html#CONFIG_SCHEMA">CONFIG_SCHEMA</a></li><li><a href="global.html#CONFLICT_POLICIES">CONFLICT_POLICIES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DIAGNOSTIC_CATALOGUE">DIAGNOSTIC_CATALOGUE</a></li><li><a href="global.html#FUNCTION_CONSTRUCTORS">FUNCTION_CONSTRUCTORS</a></li><li><a href="global.html#INSTANCE_API_KEYS">INSTANCE_API_KEYS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#IS_BRIDGE">IS_BRIDGE</a></li><li><a href="global.html#KNOWN_ELEMENTS">KNOWN_ELEMENTS</a></li><li><a href="global.html#LIVE_REGION_ID">LIVE_REGION_ID</a></li><li><a href="global.html#MAX_TRACE_BYTES">MAX_TRACE_BYTES</a></li><li><a href="global.html#NAMESPACE_GLOBAL">NAMESPACE_GLOBAL</a></li><li><a href="global.html#PROTECTED_PROTOTYPES">PROTECTED_PROTOTYPES</a></li><li><a href="global.html#PUBLIC_GLOBALS">PUBLIC_GLOBALS</a></li><li><a href="global.html#RESERVED_KEYS">RESERVED_KEYS</a></li><li><a href="global.html#RUNTIME_SPECIFIER">RUNTIME_SPECIFIER</a></li><li><a href="global.html#SET_NAME">SET_NAME</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#actionLabel">actionLabel</a></li><li><a href="global.html#activeScope">activeScope</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#age">age</a></li><li><a href="global.html#analyzeBridge">analyzeBridge</a></li><li><a href="global.html#analyzeBridgeFile">analyzeBridgeFile</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#announce">announce</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#assertNotFunctionConstructor">assertNotFunctionConstructor</a></li><li><a href="global.html#assertNotProtectedPrototype">assertNotProtectedPrototype</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blankComments">blankComments</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#bridge">bridge</a></li><li><a href="global.html#bridgeBindingName">bridgeBindingName</a></li><li><a href="global.html#bridgeNameFromFile">bridgeNameFromFile</a></li><li><a href="global.html#buildAstScope">buildAstScope</a></li><li><a href="global.html#buildAtomicSpec">buildAtomicSpec</a></li><li><a href="global.html#buildEventNode">buildEventNode</a></li><li><a href="global.html#buildModel">buildModel</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#byJobId">byJobId</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#clearExpressionCache">clearExpressionCache</a></li><li><a href="global.html#cloneInitial">cloneInitial</a></li><li><a href="global.html#collectImportBindings">collectImportBindings</a></li><li><a href="global.html#collectSemantics">collectSemantics</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#composeBundleSourceMap">composeBundleSourceMap</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createInterpolationRegex">createInterpolationRegex</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createRecursiveWatcherFallback">createRecursiveWatcherFallback</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#declarationCache">declarationCache</a></li><li><a href="global.html#declaredMembers">declaredMembers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#defineBridgeName">defineBridgeName</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#describe">describe</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#edgeLabel">edgeLabel</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#explainDiagnostic">explainDiagnostic</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractEmittedEvents">extractEmittedEvents</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractSubscriptions">extractSubscriptions</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#failProcess">failProcess</a></li><li><a href="global.html#findBridgeImports">findBridgeImports</a></li><li><a href="global.html#findComponentSource">findComponentSource</a></li><li><a href="global.html#findDefinitionBrace">findDefinitionBrace</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushDepth">flushDepth</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#flushPromises">flushPromises</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#generateTemplateSourceMap">generateTemplateSourceMap</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getDiagnostic">getDiagnostic</a></li><li><a href="global.html#getExpressionCacheStats">getExpressionCacheStats</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOrCreateLiveRegion">getOrCreateLiveRegion</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getScope">getScope</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDependentOnPath">hasDependentOnPath</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isBridge">isBridge</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isDeniedProjectPath">isDeniedProjectPath</a></li><li><a href="global.html#isInsideRoot">isInsideRoot</a></li><li><a href="global.html#isReactive">isReactive</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#isUnused">isUnused</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#loadSidecar">loadSidecar</a></li><li><a href="global.html#manageFocus">manageFocus</a></li><li><a href="global.html#markRaw">markRaw</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maskSecret">maskSecret</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#memberBodySpan">memberBodySpan</a></li><li><a href="global.html#memberParams">memberParams</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#normalizeCode">normalizeCode</a></li><li><a href="global.html#numericFlag">numericFlag</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#onScopeDispose">onScopeDispose</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseImports">parseImports</a></li><li><a href="global.html#parseMember">parseMember</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseObjectMembers">parseObjectMembers</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#parserInstance">parserInstance</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#positional">positional</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#printNoTraces">printNoTraces</a></li><li><a href="global.html#printTree">printTree</a></li><li><a href="global.html#printUnresolved">printUnresolved</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#queued">queued</a></li><li><a href="global.html#readDeclarations">readDeclarations</a></li><li><a href="global.html#readEnvFileMeta">readEnvFileMeta</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportAmbiguous">reportAmbiguous</a></li><li><a href="global.html#reportFatal">reportFatal</a></li><li><a href="global.html#reportRebuildFailure">reportRebuildFailure</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveBridgeSpecifier">resolveBridgeSpecifier</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolveMode">resolveMode</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#resolveRequestPath">resolveRequestPath</a></li><li><a href="global.html#runAtlas">runAtlas</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runEnv">runEnv</a></li><li><a href="global.html#runHook">runHook</a></li><li><a href="global.html#runInScope">runInScope</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runQuery">runQuery</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runTrace">runTrace</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#sanitizeUrlsIn">sanitizeUrlsIn</a></li><li><a href="global.html#scanObjectLiteral">scanObjectLiteral</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setExpressionCacheCapacity">setExpressionCacheCapacity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#sharedParser">sharedParser</a></li><li><a href="global.html#shouldGenerateTest">shouldGenerateTest</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#suggestCodes">suggestCodes</a></li><li><a href="global.html#suggestName">suggestName</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#toRaw">toRaw</a></li><li><a href="global.html#traceExport">traceExport</a></li><li><a href="global.html#traceList">traceList</a></li><li><a href="global.html#tracePrune">tracePrune</a></li><li><a href="global.html#traceView">traceView</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#untracked">untracked</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#unwrapAtomic">unwrapAtomic</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#wantsJson">wantsJson</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchDirectory">watchDirectory</a></li><li><a href="global.html#watchEffect">watchEffect</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#wrappedFunctionBodySpan">wrappedFunctionBodySpan</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Wed Sep 09 2026 20:21:15 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

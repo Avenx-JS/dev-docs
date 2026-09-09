@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/core/renderer/program/bindings.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/core/renderer/program/bindings.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @file bindings.js
+ * @description What each render-program op does to the DOM.
+ *
+ * One function per op kind, each writing to exactly one node. These are the
+ * leaves of the new architecture: everything above them exists to arrange for
+ * the right one of these to run with the right value, and nothing below them
+ * touches the DOM.
+ *
+ * ## Matching the string renderer's semantics
+ *
+ * These replace a pipeline that escaped a value into HTML, parsed that HTML,
+ * and diffed the result into the document. Anything the round trip did
+ * incidentally is behaviour applications now depend on, so it is reproduced
+ * here deliberately rather than rediscovered as a bug report:
+ *
+ * - **Escaping.** The old path escaped a value and the parser unescaped it, so
+ *   the text that reached the document was the value verbatim. Writing
+ *   `node.data` directly produces the same string and cannot be mis-escaped,
+ *   because it never becomes markup at all.
+ * - **`null` renders as nothing**, not as the string "null".
+ * - **`SafeHtml` in a `{{ }}` interpolation is inserted as markup.** The old
+ *   path skipped escaping for it; a text write would have shown the tags. Text
+ *   ops therefore check for it and hand over to the raw path.
+ * - **Boolean attributes.** `disabled="false"` removed the attribute and set
+ *   the property; anything else set both.
+ * - **URL attributes** were sanitised on every parsed tree, so they are
+ *   sanitised on every write here.
+ *
+ * ## Where the security boundary sits
+ *
+ * Nowhere in this file is a value turned into markup unless the op is `raw` or
+ * the value is a `SafeHtml` -- the same two doors the string renderer had, and
+ * no new ones. Expressions are still evaluated by the AST evaluator through the
+ * callback these functions are given; this module receives values, never source.
+ * @module lib/core/renderer/program/bindings
+ */
+
+import { isBooleanAttribute } from '../constants.js';
+import { HtmlEscaper, SafeHtml } from '../../security/escapeHtml.js';
+import { sanitizeUrlAttribute, isUrlAttribute } from '../../security/urlPolicy.js';
+import { tracer } from '../../trace/tracer.js';
+import { traceDomOp, clampDomValue } from '../../trace/dom.js';
+import { logger } from '../../runtime/AvenxLogger.js';
+import { AvenxErrorCodes, formatMessage } from '../../runtime/AvenxError.js';
+
+/**
+ * The escaper the string renderer used, reused rather than reimplemented.
+ *
+ * `data-ax-html` escapes a plain value and only lets a `SafeHtml` through. A
+ * second escaping implementation here could drift from that one, and the
+ * direction it would drift in is "escapes less".
+ * @type {HtmlEscaper}
+ */
+const escaper = new HtmlEscaper();
+
+/**
+ * Values that mean "this boolean attribute is off".
+ *
+ * Deliberately not JavaScript falsiness. The string renderer decided by looking
+ * at the rendered attribute text, where the only off value was the literal
+ * "false" -- so `0` was on. Matching that keeps `disabled="{{ count }}"` behaving
+ * as it does today. Empty and null are added because they reached the old path
+ * as an empty attribute value, which read as *on*: an attribute bound to
+ * nothing being present is a bug rather than a semantic worth carrying forward.
+ * @param {any} value - The evaluated value.
+ * @returns {boolean} True when the attribute should be absent.
+ */
+function isBooleanOff(value) {
+  return value === false || value === 'false' || value === null || value === undefined || value === '';
+}
+
+/**
+ * Elements whose `value` attribute stops driving their value once a user has
+ * typed into them.
+ * @type {Set&lt;string>}
+ */
+const VALUE_PROPERTY_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+
+/**
+ * Mirrors an attribute onto the DOM property where the two can diverge.
+ *
+ * For a form control the `value` attribute is the *default* value: once the
+ * user has typed, the property and the attribute are independent, and setting
+ * the attribute alone leaves what the user sees unchanged. Two-way binding
+ * depends on this -- a state change made in code has to reach the control the
+ * user has already touched. The string renderer did the same thing in its
+ * attribute patch, for the same reason.
+ * @param {Element} element - The bound element.
+ * @param {string} name - The attribute just written.
+ * @param {string} value - The value written.
+ */
+function syncValueProperty(element, name, value) {
+  if (name !== 'value' || !VALUE_PROPERTY_TAGS.has(element.nodeName)) {
+    return;
+  }
+  if (element.value !== value) {
+    element.value = value;
+  }
+}
+
+/**
+ * Converts an evaluated value to the text it renders as.
+ * @param {any} value - The evaluated value.
+ * @returns {string} The text, with null and undefined rendering as nothing.
+ */
+function asText(value) {
+  return value === null || value === undefined ? '' : String(value);
+}
+
+/**
+ * Writes a value into a dynamic text node.
+ * @param {Text} node - The text node the compiler reserved.
+ * @param {any} value - The evaluated value.
+ * @param {object} binding - Per-binding state, used to manage raw ranges.
+ */
+export function applyText(node, value, binding) {
+  if (value instanceof SafeHtml) {
+    applyRaw(node, value, binding);
+    return;
+  }
+
+  // A binding that previously held raw markup and now holds text has to clear
+  // the nodes it inserted, or the old markup would sit beside the new text.
+  if (binding.rawNodes) {
+    clearRawRange(binding);
+  }
+
+  const next = asText(value);
+  if (node.data === next) {
+    return;
+  }
+  const previous = node.data;
+  node.data = next;
+
+  if (tracer.on) {
+    traceDomOp('text', node, { from: clampDomValue(previous), to: clampDomValue(next) });
+  }
+}
+
+/**
+ * Replaces the markup a raw binding owns.
+ *
+ * A raw binding owns a *range* rather than a node: one expression can produce
+ * any number of elements. The compiler's text marker stays in the document as
+ * an anchor, and the nodes the binding inserted are tracked so the next
+ * evaluation can remove exactly those and nothing else. Clearing by emptying
+ * the parent would take siblings that belong to other bindings.
+ * @param {Text} anchor - The anchor node the compiler reserved.
+ * @param {any} value - The evaluated value.
+ * @param {object} binding - Per-binding state holding the current range.
+ */
+export function applyRaw(anchor, value, binding) {
+  const markup = value === null || value === undefined ? '' : String(value);
+  if (binding.rawHtml === markup) {
+    return;
+  }
+  binding.rawHtml = markup;
+
+  clearRawRange(binding);
+
+  const parent = anchor.parentNode;
+  if (!parent || markup === '') {
+    return;
+  }
+
+  const host = document.createElement('template');
+  let source;
+  if (host &amp;&amp; 'content' in host) {
+    host.innerHTML = markup;
+    source = host.content;
+  } else {
+    const holder = document.createElement('div');
+    holder.innerHTML = markup;
+    source = holder;
+  }
+
+  // Collected first, then inserted in order after the anchor. Inserting
+  // straight from the fragment would work too, but reading `firstChild` while
+  // mutating the same list is the shape that produces reversed output when the
+  // insertion point is recomputed, and this is not the place to be clever.
+  const inserted = [];
+  while (source.firstChild) {
+    inserted.push(source.removeChild(source.firstChild));
+  }
+
+  let cursor = anchor;
+  for (const node of inserted) {
+    parent.insertBefore(node, cursor.nextSibling);
+    cursor = node;
+  }
+
+  binding.rawNodes = inserted;
+  if (tracer.on) {
+    traceDomOp('html', anchor, { to: clampDomValue(markup) });
+  }
+}
+
+/**
+ * Removes the nodes a raw binding previously inserted.
+ * @param {object} binding - Per-binding state.
+ */
+function clearRawRange(binding) {
+  if (!binding.rawNodes) return;
+  for (const node of binding.rawNodes) {
+    if (node.parentNode) {
+      node.parentNode.removeChild(node);
+    }
+  }
+  binding.rawNodes = null;
+}
+
+/**
+ * Sets an attribute from a whole-value expression.
+ * @param {Element} element - The bound element.
+ * @param {string} name - The attribute name.
+ * @param {any} value - The evaluated value.
+ */
+export function applyAttribute(element, name, value) {
+  // `null` becomes an empty attribute, not a removed one.
+  //
+  // Removing it would be the better behaviour -- `href="{{ maybe }}"` resolving
+  // to `href=""` links to the current page, and every other framework removes
+  // it -- and it is deliberately not done here. The string renderer produces
+  // `title=""` for a null interpolation, because the interpolation contributes
+  // nothing to the attribute value, and both renderers will be in service
+  // together for as long as `&lt;@for>` and `&lt;slot>` fall back. Two renderers that
+  // disagree about one attribute is a worse problem than one attribute with an
+  // unfortunate value, and the parity test that found this divergence is the
+  // reason it is written down rather than fixed quietly.
+  //
+  // Changing it is a behaviour change for both paths at once, not a property of
+  // this one.
+  const raw = value === null || value === undefined ? '' : String(value);
+  const next = isUrlAttribute(name) ? sanitizeUrlAttribute(name, raw) : raw;
+
+  if (element.getAttribute(name) !== next) {
+    element.setAttribute(name, next);
+    if (tracer.on) {
+      traceDomOp('attr', element, { name, to: clampDomValue(next) });
+    }
+  }
+
+  // Outside the attribute comparison: the attribute can already hold this value
+  // while the property holds what the user typed, which is exactly the case
+  // two-way binding has to correct.
+  syncValueProperty(element, name, next);
+}
+
+/**
+ * Sets an attribute assembled from literal and expression parts.
+ * @param {Element} element - The bound element.
+ * @param {string} name - The attribute name.
+ * @param {string} value - The already-joined value.
+ */
+export function applyAttributeParts(element, name, value) {
+  const next = isUrlAttribute(name) ? sanitizeUrlAttribute(name, value) : value;
+  if (element.getAttribute(name) !== next) {
+    element.setAttribute(name, next);
+    if (tracer.on) {
+      traceDomOp('attr', element, { name, to: clampDomValue(next) });
+    }
+  }
+  syncValueProperty(element, name, next);
+}
+
+/**
+ * Sets or removes a boolean attribute, and mirrors it onto the property.
+ * @param {Element} element - The bound element.
+ * @param {string} name - The attribute name.
+ * @param {any} value - The evaluated value.
+ */
+export function applyBoolean(element, name, value) {
+  const off = isBooleanOff(value);
+
+  if (off) {
+    if (element.hasAttribute(name)) {
+      element.removeAttribute(name);
+    }
+  } else if (element.getAttribute(name) !== 'true') {
+    element.setAttribute(name, 'true');
+  }
+
+  // The property is what the browser acts on; the attribute is what a test or
+  // a stylesheet reads. The string renderer set both, so both are set here.
+  if (isBooleanAttribute(name)) {
+    element[name] = !off;
+  }
+
+  if (tracer.on) {
+    traceDomOp('attr', element, { name, to: off ? null : 'true' });
+  }
+}
+
+/**
+ * Toggles an element's visibility, preserving its authored display value.
+ * @param {Element} element - The bound element.
+ * @param {any} value - The evaluated value; truthiness decides.
+ * @param {object} binding - Per-binding state, holding the authored display.
+ */
+export function applyShow(element, value, binding) {
+  const visible = !!value;
+
+  if (binding.originalDisplay === undefined) {
+    // Read once, before the first hide, so a later show restores what the
+    // author wrote rather than the empty string a hidden element reports.
+    binding.originalDisplay = (element.style &amp;&amp; element.style.display) || '';
+    element.__originalDisplay = binding.originalDisplay;
+  }
+
+  const next = visible ? binding.originalDisplay : 'none';
+  if (element.style &amp;&amp; element.style.display !== next) {
+    element.style.display = next;
+  }
+}
+
+/**
+ * Applies a class binding, removing only the classes it previously added.
+ * @param {Element} element - The bound element.
+ * @param {any} value - A string of class names, or an object of name to flag.
+ * @param {object} binding - Per-binding state, holding the previous class list.
+ */
+export function applyClass(element, value, binding) {
+  const next = [];
+  if (typeof value === 'string') {
+    for (const name of value.split(/\s+/)) {
+      if (name) next.push(name);
+    }
+  } else if (value &amp;&amp; typeof value === 'object') {
+    for (const [name, enabled] of Object.entries(value)) {
+      if (enabled) next.push(name);
+    }
+  }
+
+  const previous = binding.classes || [];
+
+  // Remove only what this binding added. The element's authored classes and the
+  // component's scoped class share the same attribute and must survive.
+  for (const name of previous) {
+    if (!next.includes(name)) {
+      element.classList.remove(name);
+    }
+  }
+  for (const name of next) {
+    if (!previous.includes(name)) {
+      element.classList.add(name);
+    }
+  }
+
+  binding.classes = next;
+  element.__lastAxClasses = next;
+}
+
+/**
+ * Replaces an element's inner HTML from an expression.
+ * @param {Element} element - The bound element.
+ * @param {any} value - The evaluated value.
+ */
+export function applyHtml(element, value) {
+  let markup;
+  if (value instanceof SafeHtml) {
+    markup = String(value);
+  } else if (value === null || value === undefined) {
+    markup = '';
+  } else {
+    // Matches the string renderer: a plain value in `data-ax-html` is escaped,
+    // so only a SafeHtml can introduce markup. Removing that check would turn
+    // every `data-ax-html` in every application into an injection point.
+    markup = escaper.escape(value);
+  }
+
+  if (element.innerHTML !== markup) {
+    element.innerHTML = markup;
+  }
+}
+
+/**
+ * Stores an evaluated prop for a child component mounted at this element.
+ *
+ * The value is held on the element rather than pushed straight into the child,
+ * because at the moment a prop op first runs the child does not exist yet --
+ * the parent's tree is still detached. The owner reads these when it mounts or
+ * refreshes its children.
+ *
+ * Values are kept as values. The string path carried props through
+ * `data-props-*` attributes and re-evaluated them from source on every render
+ * of the parent, which meant every prop of every child was re-evaluated
+ * whenever anything in the parent changed.
+ * @param {Element} element - The child's mount point.
+ * @param {string} name - The prop name.
+ * @param {any} value - The evaluated value.
+ * @returns {boolean} True when the stored value changed.
+ */
+export function applyProp(element, name, value) {
+  let store = element.__axProps;
+  if (!store) {
+    store = {};
+    element.__axProps = store;
+  }
+  if (Object.prototype.hasOwnProperty.call(store, name) &amp;&amp; store[name] === value) {
+    return false;
+  }
+  store[name] = value;
+  return true;
+}
+
+/**
+ * Reports a binding that threw, without taking the rest of the update with it.
+ * @param {object} op - The op that failed.
+ * @param {Error} error - What went wrong.
+ */
+export function reportBindingError(op, error) {
+  logger.warn(formatMessage(AvenxErrorCodes.TEMPLATE_RENDER_ERROR, op.x || op.a || op.k, error));
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_bundler.html">lib/bundler</a></li><li><a href="module-lib_bundler_emit.html">lib/bundler/emit</a></li><li><a href="module-lib_bundler_graph.html">lib/bundler/graph</a></li><li><a href="module-lib_bundler_minify.html">lib/bundler/minify</a></li><li><a href="module-lib_bundler_parseModule.html">lib/bundler/parseModule</a></li><li><a href="module-lib_bundler_resolve.html">lib/bundler/resolve</a></li><li><a href="module-lib_bundler_scanner.html">lib/bundler/scanner</a></li><li><a href="module-lib_bundler_treeshake.html">lib/bundler/treeshake</a></li><li><a href="module-lib_compiler_atlas_AppModel.html">lib/compiler/atlas/AppModel</a></li><li><a href="module-lib_compiler_atlas_build.html">lib/compiler/atlas/build</a></li><li><a href="module-lib_compiler_atlas_cache.html">lib/compiler/atlas/cache</a></li><li><a href="module-lib_compiler_atlas_diagnostics.html">lib/compiler/atlas/diagnostics</a></li><li><a href="module-lib_compiler_atlas_emit.html">lib/compiler/atlas/emit</a></li><li><a href="module-lib_compiler_atlas_query.html">lib/compiler/atlas/query</a></li><li><a href="module-lib_compiler_atlas_resolve.html">lib/compiler/atlas/resolve</a></li><li><a href="module-lib_compiler_atlas_routes.html">lib/compiler/atlas/routes</a></li><li><a href="module-lib_compiler_atlas_source.html">lib/compiler/atlas/source</a></li><li><a href="module-lib_compiler_bundle_validate.html">lib/compiler/bundle/validate</a></li><li><a href="module-lib_compiler_modules.html">lib/compiler/modules</a></li><li><a href="module-lib_compiler_parser_declarations.html">lib/compiler/parser/declarations</a></li><li><a href="module-lib_compiler_parser_htmlTree.html">lib/compiler/parser/htmlTree</a></li><li><a href="module-lib_compiler_parser_tokenizer.html">lib/compiler/parser/tokenizer</a></li><li><a href="module-lib_compiler_render_compileTemplate.html">lib/compiler/render/compileTemplate</a></li><li><a href="module-lib_compiler_render_program.html">lib/compiler/render/program</a></li><li><a href="module-lib_compiler_rewind_diagnostics.html">lib/compiler/rewind/diagnostics</a></li><li><a href="module-lib_compiler_rewind_effects.html">lib/compiler/rewind/effects</a></li><li><a href="module-lib_compiler_rewind_writeSet.html">lib/compiler/rewind/writeSet</a></li><li><a href="module-lib_compiler_sourceMapTrace.html">lib/compiler/sourceMapTrace</a></li><li><a href="module-lib_compiler_templateEvents.html">lib/compiler/templateEvents</a></li><li><a href="module-lib_compiler_validateExpressions.html">lib/compiler/validateExpressions</a></li><li><a href="module-lib_core_expression_compile.html">lib/core/expression/compile</a></li><li><a href="module-lib_core_expression_evaluator.html">lib/core/expression/evaluator</a></li><li><a href="module-lib_core_expression_parser.html">lib/core/expression/parser</a></li><li><a href="module-lib_core_index.html">lib/core/index</a></li><li><a href="module-lib_core_reactive_journal.html">lib/core/reactive/journal</a></li><li><a href="module-lib_core_reactive_scopeProxy.html">lib/core/reactive/scopeProxy</a></li><li><a href="module-lib_core_reactive_symbols.html">lib/core/reactive/symbols</a></li><li><a href="module-lib_core_renderer_program_CompiledTemplate.html">lib/core/renderer/program/CompiledTemplate</a></li><li><a href="module-lib_core_renderer_program_TemplateInstance.html">lib/core/renderer/program/TemplateInstance</a></li><li><a href="module-lib_core_renderer_program_bindings.html">lib/core/renderer/program/bindings</a></li><li><a href="module-lib_core_runtime_AvenxGuard.html">lib/core/runtime/AvenxGuard</a></li><li><a href="module-lib_core_runtime_atomic.html">lib/core/runtime/atomic</a></li><li><a href="module-lib_core_security_urlPolicy.html">lib/core/security/urlPolicy</a></li><li><a href="module-lib_core_testing.html">lib/core/testing</a></li><li><a href="module-lib_core_tooling.html">lib/core/tooling</a></li><li><a href="module-lib_core_tooling_loadComponent.html">lib/core/tooling/loadComponent</a></li><li><a href="module-lib_core_trace_capture.html">lib/core/trace/capture</a></li><li><a href="module-lib_core_trace_contracts.html">lib/core/trace/contracts</a></li><li><a href="module-lib_core_trace_derived.html">lib/core/trace/derived</a></li><li><a href="module-lib_core_trace_devtools.html">lib/core/trace/devtools</a></li><li><a href="module-lib_core_trace_dom.html">lib/core/trace/dom</a></li><li><a href="module-lib_core_trace_exportTest.html">lib/core/trace/exportTest</a></li><li><a href="module-lib_core_trace_format.html">lib/core/trace/format</a></li><li><a href="module-lib_core_trace_globals.html">lib/core/trace/globals</a></li><li><a href="module-lib_core_trace_reactive.html">lib/core/trace/reactive</a></li><li><a href="module-lib_core_trace_recorder.html">lib/core/trace/recorder</a></li><li><a href="module-lib_core_trace_redact.html">lib/core/trace/redact</a></li><li><a href="module-lib_core_trace_replay.html">lib/core/trace/replay</a></li><li><a href="module-lib_core_trace_resource.html">lib/core/trace/resource</a></li><li><a href="module-lib_core_trace_schema.html">lib/core/trace/schema</a></li><li><a href="module-lib_core_trace_store.html">lib/core/trace/store</a></li><li><a href="module-lib_core_trace_tracer.html">lib/core/trace/tracer</a></li><li><a href="module-lib_core_trace_transaction.html">lib/core/trace/transaction</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DisposalScope.html">DisposalScope</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li><li><a href="module-lib_bundler_emit.EmitError.html">EmitError</a></li><li><a href="module-lib_bundler_graph.BindingError.html">BindingError</a></li><li><a href="module-lib_bundler_graph.DynamicImportError.html">DynamicImportError</a></li><li><a href="module-lib_bundler_graph.ModuleGraph.html">ModuleGraph</a></li><li><a href="module-lib_bundler_parseModule.ModuleParseError.html">ModuleParseError</a></li><li><a href="module-lib_bundler_resolve.ResolveError.html">ResolveError</a></li><li><a href="module-lib_bundler_resolve.Resolver.html">Resolver</a></li><li><a href="module-lib_bundler_scanner.CodeMask.html">CodeMask</a></li><li><a href="module-lib_compiler_atlas_AppModel.AppModel.html">AppModel</a></li><li><a href="module-lib_compiler_parser_htmlTree.HTMLNode.html">HTMLNode</a></li><li><a href="module-lib_core_expression_evaluator-Frame.html">Frame</a></li><li><a href="module-lib_core_expression_parser.ExpressionParseError.html">ExpressionParseError</a></li><li><a href="module-lib_core_expression_parser-Parser.html">Parser</a></li><li><a href="module-lib_core_reactive_journal.JournalFrame.html">JournalFrame</a></li><li><a href="module-lib_core_reactive_journal-Journal.html">Journal</a></li><li><a href="module-lib_core_renderer_program_CompiledTemplate.CompiledTemplate.html">CompiledTemplate</a></li><li><a href="module-lib_core_renderer_program_TemplateInstance.TemplateInstance.html">TemplateInstance</a></li><li><a href="module-lib_core_runtime_AvenxGuard.AvenxGuard.html">AvenxGuard</a></li><li><a href="module-lib_core_runtime_AvenxGuard.GuardContext.html">GuardContext</a></li><li><a href="module-lib_core_trace_recorder.TraceRecorder.html">TraceRecorder</a></li><li><a href="module-lib_core_trace_redact.Redactor.html">Redactor</a></li><li><a href="module-lib_core_trace_tracer-Tracer.html">Tracer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#ATOMIC_VALUE">ATOMIC_VALUE</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#BUILTIN_TAGS">BUILTIN_TAGS</a></li><li><a href="global.html#BUNDLE_SIZE_WARNING_THRESHOLD_KB">BUNDLE_SIZE_WARNING_THRESHOLD_KB</a></li><li><a href="global.html#CONFIG_SCHEMA">CONFIG_SCHEMA</a></li><li><a href="global.html#CONFLICT_POLICIES">CONFLICT_POLICIES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DIAGNOSTIC_CATALOGUE">DIAGNOSTIC_CATALOGUE</a></li><li><a href="global.html#FUNCTION_CONSTRUCTORS">FUNCTION_CONSTRUCTORS</a></li><li><a href="global.html#INSTANCE_API_KEYS">INSTANCE_API_KEYS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#IS_BRIDGE">IS_BRIDGE</a></li><li><a href="global.html#KNOWN_ELEMENTS">KNOWN_ELEMENTS</a></li><li><a href="global.html#LIVE_REGION_ID">LIVE_REGION_ID</a></li><li><a href="global.html#MAX_TRACE_BYTES">MAX_TRACE_BYTES</a></li><li><a href="global.html#NAMESPACE_GLOBAL">NAMESPACE_GLOBAL</a></li><li><a href="global.html#PROTECTED_PROTOTYPES">PROTECTED_PROTOTYPES</a></li><li><a href="global.html#PUBLIC_GLOBALS">PUBLIC_GLOBALS</a></li><li><a href="global.html#RESERVED_KEYS">RESERVED_KEYS</a></li><li><a href="global.html#RUNTIME_SPECIFIER">RUNTIME_SPECIFIER</a></li><li><a href="global.html#SET_NAME">SET_NAME</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#actionLabel">actionLabel</a></li><li><a href="global.html#activeScope">activeScope</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#age">age</a></li><li><a href="global.html#analyzeBridge">analyzeBridge</a></li><li><a href="global.html#analyzeBridgeFile">analyzeBridgeFile</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#announce">announce</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#assertNotFunctionConstructor">assertNotFunctionConstructor</a></li><li><a href="global.html#assertNotProtectedPrototype">assertNotProtectedPrototype</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blankComments">blankComments</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#bridge">bridge</a></li><li><a href="global.html#bridgeBindingName">bridgeBindingName</a></li><li><a href="global.html#bridgeNameFromFile">bridgeNameFromFile</a></li><li><a href="global.html#buildAstScope">buildAstScope</a></li><li><a href="global.html#buildAtomicSpec">buildAtomicSpec</a></li><li><a href="global.html#buildEventNode">buildEventNode</a></li><li><a href="global.html#buildModel">buildModel</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#byJobId">byJobId</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#clearExpressionCache">clearExpressionCache</a></li><li><a href="global.html#cloneInitial">cloneInitial</a></li><li><a href="global.html#collectImportBindings">collectImportBindings</a></li><li><a href="global.html#collectSemantics">collectSemantics</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#composeBundleSourceMap">composeBundleSourceMap</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createInterpolationRegex">createInterpolationRegex</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createRecursiveWatcherFallback">createRecursiveWatcherFallback</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#declarationCache">declarationCache</a></li><li><a href="global.html#declaredMembers">declaredMembers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#defineBridgeName">defineBridgeName</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#describe">describe</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#edgeLabel">edgeLabel</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#explainDiagnostic">explainDiagnostic</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractEmittedEvents">extractEmittedEvents</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractSubscriptions">extractSubscriptions</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#failProcess">failProcess</a></li><li><a href="global.html#findBridgeImports">findBridgeImports</a></li><li><a href="global.html#findComponentSource">findComponentSource</a></li><li><a href="global.html#findDefinitionBrace">findDefinitionBrace</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushDepth">flushDepth</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#flushPromises">flushPromises</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#generateTemplateSourceMap">generateTemplateSourceMap</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getDiagnostic">getDiagnostic</a></li><li><a href="global.html#getExpressionCacheStats">getExpressionCacheStats</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOrCreateLiveRegion">getOrCreateLiveRegion</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getScope">getScope</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDependentOnPath">hasDependentOnPath</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isBridge">isBridge</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isDeniedProjectPath">isDeniedProjectPath</a></li><li><a href="global.html#isInsideRoot">isInsideRoot</a></li><li><a href="global.html#isReactive">isReactive</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#isUnused">isUnused</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#loadSidecar">loadSidecar</a></li><li><a href="global.html#manageFocus">manageFocus</a></li><li><a href="global.html#markRaw">markRaw</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maskSecret">maskSecret</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#memberBodySpan">memberBodySpan</a></li><li><a href="global.html#memberParams">memberParams</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#normalizeCode">normalizeCode</a></li><li><a href="global.html#numericFlag">numericFlag</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#onScopeDispose">onScopeDispose</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseImports">parseImports</a></li><li><a href="global.html#parseMember">parseMember</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseObjectMembers">parseObjectMembers</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#parserInstance">parserInstance</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#positional">positional</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#printNoTraces">printNoTraces</a></li><li><a href="global.html#printTree">printTree</a></li><li><a href="global.html#printUnresolved">printUnresolved</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#queued">queued</a></li><li><a href="global.html#readDeclarations">readDeclarations</a></li><li><a href="global.html#readEnvFileMeta">readEnvFileMeta</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportAmbiguous">reportAmbiguous</a></li><li><a href="global.html#reportFatal">reportFatal</a></li><li><a href="global.html#reportRebuildFailure">reportRebuildFailure</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveBridgeSpecifier">resolveBridgeSpecifier</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolveMode">resolveMode</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#resolveRequestPath">resolveRequestPath</a></li><li><a href="global.html#runAtlas">runAtlas</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runEnv">runEnv</a></li><li><a href="global.html#runHook">runHook</a></li><li><a href="global.html#runInScope">runInScope</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runQuery">runQuery</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runTrace">runTrace</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#sanitizeUrlsIn">sanitizeUrlsIn</a></li><li><a href="global.html#scanObjectLiteral">scanObjectLiteral</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setExpressionCacheCapacity">setExpressionCacheCapacity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#sharedParser">sharedParser</a></li><li><a href="global.html#shouldGenerateTest">shouldGenerateTest</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#suggestCodes">suggestCodes</a></li><li><a href="global.html#suggestName">suggestName</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#toRaw">toRaw</a></li><li><a href="global.html#traceExport">traceExport</a></li><li><a href="global.html#traceList">traceList</a></li><li><a href="global.html#tracePrune">tracePrune</a></li><li><a href="global.html#traceView">traceView</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#untracked">untracked</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#unwrapAtomic">unwrapAtomic</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#wantsJson">wantsJson</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchDirectory">watchDirectory</a></li><li><a href="global.html#watchEffect">watchEffect</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#wrappedFunctionBodySpan">wrappedFunctionBodySpan</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Wed Sep 09 2026 20:21:15 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

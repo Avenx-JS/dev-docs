@@ -438,7 +438,7 @@ Global scopes outside this tracking collection are rejected with a sandbox excep
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line142">line 142</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line139">line 139</a>
     </li></ul></dd>
     
 
@@ -506,7 +506,7 @@ Global scopes outside this tracking collection are rejected with a sandbox excep
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line66">line 66</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line71">line 71</a>
     </li></ul></dd>
     
 
@@ -579,7 +579,7 @@ Placeholders are specified as {0}, {1}, etc. and replaced at formatting time.</p
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line176">line 176</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line186">line 186</a>
     </li></ul></dd>
     
 
@@ -728,7 +728,89 @@ enough to list the non-prefixed framework tags here.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line63">line 63</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line34">line 34</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="BUNDLE_SIZE_WARNING_THRESHOLD_KB"><span class="type-signature">(constant) </span>BUNDLE_SIZE_WARNING_THRESHOLD_KB<span class="type-signature"> :number</span></h4>
+
+
+
+
+<div class="description">
+    <p>Default size above which a build warns about the JavaScript it produced.</p>
+<p>Raised from 50 KB when the bundler replaced the concatenator, because 50 KB
+was never satisfiable: the framework runtime alone is several times that, so
+AVX_W01 fired on <code>avenx init</code> output and on every build after it. A warning
+that always fires is a warning nobody reads, and it made the repository's own
+bundle-size CI gate permanently red.</p>
+<p>The number is a ceiling for the whole bundle -- runtime included -- chosen to
+sit above what an application of a few dozen components costs and to fire
+when something large joins the graph. <code>bundleSizeWarningKb</code> in
+avenx.config.json overrides it, because the honest number depends on what the
+application is.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">number</span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler.js.html">lib/compiler.js</a>, <a href="lib_compiler.js.html#line60">line 60</a>
     </li></ul></dd>
     
 
@@ -1002,81 +1084,6 @@ when an action does not name one.</p>
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
         <a href="lib_core_security_sanitize.js.html">lib/core/security/sanitize.js</a>, <a href="lib_core_security_sanitize.js.html#line19">line 19</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-        
-            
-<h4 class="name" id="DEFAULT_VOID_TAGS"><span class="type-signature">(constant) </span>DEFAULT_VOID_TAGS<span class="type-signature"> :Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span></h4>
-
-
-
-
-<div class="description">
-    <p>The set of HTML tags that are void (self-closing / no children) by
-default. Custom tags can be added on top of this list on a per-project
-basis via the <code>voidTags</code> array in <code>avenx.config.json</code> (see
-<a href="global.html#getCustomVoidTags">getCustomVoidTags</a> and issue #198).</p>
-</div>
-
-
-
-    <h5>Type:</h5>
-    <ul>
-        <li>
-            
-<span class="param-type">Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
-
-
-        </li>
-    </ul>
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line26">line 26</a>
     </li></ul></dd>
     
 
@@ -1558,7 +1565,7 @@ ordinary element regardless of membership (see ComponentParser#validateComponent
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line83">line 83</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line54">line 54</a>
     </li></ul></dd>
     
 
@@ -2077,7 +2084,7 @@ owns in every application, forever.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line26">line 26</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line23">line 23</a>
     </li></ul></dd>
     
 
@@ -2684,7 +2691,7 @@ re-parse the config from disk.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line109">line 109</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line129">line 129</a>
     </li></ul></dd>
     
 
@@ -2881,7 +2888,7 @@ Dispatches messages to console methods dynamically.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line45">line 45</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line59">line 59</a>
     </li></ul></dd>
     
 
@@ -3162,7 +3169,7 @@ without changing any method's signature.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line39">line 39</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line53">line 53</a>
     </li></ul></dd>
     
 
@@ -3238,7 +3245,7 @@ potential runaway update chain.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line26">line 26</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line40">line 40</a>
     </li></ul></dd>
     
 
@@ -3435,7 +3442,7 @@ Keyed by job or job.id.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line33">line 33</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line47">line 47</a>
     </li></ul></dd>
     
 
@@ -3508,7 +3515,7 @@ Defaults to 25 to accommodate deep legitimate multi-pass updates while stopping 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line15">line 15</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line29">line 29</a>
     </li></ul></dd>
     
 
@@ -3658,6 +3665,84 @@ and the update path runs it on every component on every flush.</p>
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
         <a href="lib_core_renderer_domPatch.js.html">lib/core/renderer/domPatch.js</a>, <a href="lib_core_renderer_domPatch.js.html#line74">line 74</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="queued"><span class="type-signature">(constant) </span>queued<span class="type-signature"> :Set:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;function()></span></h4>
+
+
+
+
+<div class="description">
+    <p>Membership index for queue.</p>
+<p>Deduplication used to be <code>queue.includes(job)</code>, a linear scan on every
+enqueue. That was unnoticeable when a queue held one job per updating
+component. Fine-grained rendering puts one job per <em>binding</em> in it, so a
+component with 500 bound values turned a flush into 125,000 comparisons
+before running a single job. The set is kept exactly in step with the array:
+anything that removes from one removes from the other.</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Set:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;function()></span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line14">line 14</a>
     </li></ul></dd>
     
 
@@ -4623,7 +4708,7 @@ than emit a module the runtime cannot use.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line527">line 527</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line524">line 524</a>
     </li></ul></dd>
     
 
@@ -4830,7 +4915,7 @@ by the compiler to substitute environment variables.</p></td>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line622">line 622</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line621">line 621</a>
     </li></ul></dd>
     
 
@@ -6156,7 +6241,7 @@ Deals with nested component boundaries and transcluded slots.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line389">line 389</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line386">line 386</a>
     </li></ul></dd>
     
 
@@ -6569,7 +6654,7 @@ components consume by importing it.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line48">line 48</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line45">line 45</a>
     </li></ul></dd>
     
 
@@ -6729,7 +6814,7 @@ components consume by importing it.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line34">line 34</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line31">line 31</a>
     </li></ul></dd>
     
 
@@ -7106,7 +7191,7 @@ typo in <code>name=</code> is already reported by the action itself being missin
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line189">line 189</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line209">line 209</a>
     </li></ul></dd>
     
 
@@ -7297,7 +7382,7 @@ that ran rather than a compiled closure with no identity.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_events_eventExecutor.js.html">lib/core/events/eventExecutor.js</a>, <a href="lib_core_events_eventExecutor.js.html#line18">line 18</a>
+        <a href="lib_core_events_eventExecutor.js.html">lib/core/events/eventExecutor.js</a>, <a href="lib_core_events_eventExecutor.js.html#line17">line 17</a>
     </li></ul></dd>
     
 
@@ -7707,174 +7792,6 @@ may report success for a build that did not complete.</p>
     
 
     
-    <h4 class="name" id="buildVoidTagsSet"><span class="type-signature"></span>buildVoidTagsSet<span class="signature">(customVoidTags<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Set:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>>}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Builds the effective set of void tags for a parse/serialize pass by
-combining <a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a> with any project-specific tags.</p>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-        <th>Attributes</th>
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>customVoidTags</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"><p>Additional void tag names (lowercase).</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line49">line 49</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">Set:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
     <h4 class="name" id="byJobId"><span class="type-signature"></span>byJobId<span class="signature">(a, b)</span><span class="type-signature"> &rarr; {number}</span></h4>
     
 
@@ -8000,7 +7917,7 @@ before their children.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line141">line 141</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line157">line 157</a>
     </li></ul></dd>
     
 
@@ -9213,6 +9130,193 @@ made reactive either, so copying them would only be surprising.</p>
     
 
     
+    <h4 class="name" id="collectImportBindings"><span class="type-signature"></span>collectImportBindings<span class="signature">(source, bridgeLocals)</span><span class="type-signature"> &rarr; {Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    <p>The local names a component's own imports bind, excluding bridges and the
+runtime entry.</p>
+<p>A bridge already reaches the template through the bridges argument, and the
+runtime import binds the base class the generated module extends. Everything
+else -- an npm package, a local helper -- is a value the developer expects to
+be able to name, so it becomes part of the component's evaluation scope.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>The component source.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>bridgeLocals</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Local names already bound as bridges.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line86">line 86</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>Local binding names, in source order.</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="collectSemantics"><span class="type-signature"></span>collectSemantics<span class="signature">(cli)</span><span class="type-signature"> &rarr; {Object}</span></h4>
     
 
@@ -10284,7 +10388,7 @@ that DomPatcher must always be able to patch (see issue #200).</p>
             <td class="type">
             
                 
-<span class="param-type"><a href="HTMLNode.html">HTMLNode</a></span>
+<span class="param-type">HTMLNode</span>
 
 
             
@@ -10335,7 +10439,7 @@ that DomPatcher must always be able to patch (see issue #200).</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2410">line 2410</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2164">line 2164</a>
     </li></ul></dd>
     
 
@@ -11273,7 +11377,7 @@ arguments so Error objects and structured context keep their shape.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line634">line 634</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line633">line 633</a>
     </li></ul></dd>
     
 
@@ -12973,215 +13077,6 @@ bridge definition so error messages and devtools can identify it.</p>
     
 
     
-    <h4 class="name" id="emitBridge"><span class="type-signature"></span>emitBridge<span class="signature">(descriptor, source, registry)</span><span class="type-signature"> &rarr; {string}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Compiles a modern bridge module into a bundle-ready declaration.</p>
-<p>The whole module body is preserved inside an IIFE, so constants and helper
-functions declared above <code>export default</code> keep working and cannot collide
-with other modules. Imported bridges are re-bound to their canonical
-identifiers at the top of the IIFE rather than rewritten in place.</p>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>descriptor</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">object</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>The bridge descriptor.</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>source</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">string</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>The module source.</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>registry</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Map:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>, object:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>All discovered bridges, keyed by absolute path.</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line650">line 650</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-<div class="param-desc">
-    <p>The emitted declaration.</p>
-</div>
-
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">string</span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
     <h4 class="name" id="encodeMapping"><span class="type-signature"></span>encodeMapping<span class="signature">(genCol, sourceIdx, sourceLine, sourceCol, state)</span><span class="type-signature"> &rarr; {string}</span></h4>
     
 
@@ -13375,7 +13270,7 @@ identifiers at the top of the IIFE rather than rewritten in place.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_StyleProcessor.js.html">lib/compiler/StyleProcessor.js</a>, <a href="lib_compiler_StyleProcessor.js.html#line1053">line 1053</a>
+        <a href="lib_compiler_StyleProcessor.js.html">lib/compiler/StyleProcessor.js</a>, <a href="lib_compiler_StyleProcessor.js.html#line1070">line 1070</a>
     </li></ul></dd>
     
 
@@ -13530,7 +13425,7 @@ identifiers at the top of the IIFE rather than rewritten in place.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_StyleProcessor.js.html">lib/compiler/StyleProcessor.js</a>, <a href="lib_compiler_StyleProcessor.js.html#line1030">line 1030</a>
+        <a href="lib_compiler_StyleProcessor.js.html">lib/compiler/StyleProcessor.js</a>, <a href="lib_compiler_StyleProcessor.js.html#line1047">line 1047</a>
     </li></ul></dd>
     
 
@@ -14369,7 +14264,7 @@ identifiers at the top of the IIFE rather than rewritten in place.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line150">line 150</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line166">line 166</a>
     </li></ul></dd>
     
 
@@ -14528,7 +14423,7 @@ identifiers at the top of the IIFE rather than rewritten in place.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line359">line 359</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line356">line 356</a>
     </li></ul></dd>
     
 
@@ -14997,7 +14892,7 @@ identifiers at the top of the IIFE rather than rewritten in place.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line374">line 374</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line371">line 371</a>
     </li></ul></dd>
     
 
@@ -15470,7 +15365,7 @@ the output has drained.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line504">line 504</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line501">line 501</a>
     </li></ul></dd>
     
 
@@ -15815,7 +15710,7 @@ per default-imported bridge.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line340">line 340</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line337">line 337</a>
     </li></ul></dd>
     
 
@@ -16869,7 +16764,7 @@ After jobs are flushed, all queued flush callbacks (e.g. nextTick) are executed.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line212">line 212</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line229">line 229</a>
     </li></ul></dd>
     
 
@@ -17865,7 +17760,7 @@ Prefer this over ad-hoc <code>setTimeout</code> chains in unit tests.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line406">line 406</a>
+        <a href="lib_core_runtime_AvenxError.js.html">lib/core/runtime/AvenxError.js</a>, <a href="lib_core_runtime_AvenxError.js.html#line429">line 429</a>
     </li></ul></dd>
     
 
@@ -21138,7 +21033,7 @@ file, e.g.:</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line157">line 157</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line177">line 177</a>
     </li></ul></dd>
     
 
@@ -22236,184 +22131,6 @@ file, e.g.:</p>
     
 
     
-    <h4 class="name" id="getLineAndColumn"><span class="type-signature"></span>getLineAndColumn<span class="signature">(source, offset)</span><span class="type-signature"> &rarr; {Object}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Calculates 1-based line and column numbers for a character offset in a source string.</p>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>source</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">string</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>The original source code string.</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>offset</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">number</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>The zero-based character index.</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2197">line 2197</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">Object</span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
     <h4 class="name" id="getLineAndColumn"><span class="type-signature"></span>getLineAndColumn<span class="signature">(source, index)</span><span class="type-signature"> &rarr; {Object}</span></h4>
     
 
@@ -23221,7 +22938,7 @@ file, e.g.:</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line61">line 61</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line75">line 75</a>
     </li></ul></dd>
     
 
@@ -23927,7 +23644,7 @@ Uses binary search + parent tracking for O(N log N) complexity.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line175">line 175</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line191">line 191</a>
     </li></ul></dd>
     
 
@@ -24072,7 +23789,7 @@ Uses binary search + parent tracking for O(N log N) complexity.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_runtime_AvenxComponent.js.html">lib/core/runtime/AvenxComponent.js</a>, <a href="lib_core_runtime_AvenxComponent.js.html#line616">line 616</a>
+        <a href="lib_core_runtime_AvenxComponent.js.html">lib/core/runtime/AvenxComponent.js</a>, <a href="lib_core_runtime_AvenxComponent.js.html#line702">line 702</a>
     </li></ul></dd>
     
 
@@ -27172,7 +26889,7 @@ instances that may contain private fields or internal slots.</p>
             <td class="type">
             
                 
-<span class="param-type"><a href="HTMLNode.html">HTMLNode</a></span>
+<span class="param-type">HTMLNode</span>
 
 
             
@@ -27223,7 +26940,7 @@ instances that may contain private fields or internal slots.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2425">line 2425</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2179">line 2179</a>
     </li></ul></dd>
     
 
@@ -27951,7 +27668,7 @@ none is found, or if it fails to parse).</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line118">line 118</a>
+        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line138">line 138</a>
     </li></ul></dd>
     
 
@@ -29237,7 +28954,7 @@ and what a getter reads; without a span it would have to re-parse the module.</p
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line264">line 264</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line261">line 261</a>
     </li></ul></dd>
     
 
@@ -29432,7 +29149,7 @@ identifier, and an unknown identifier blocks a diagnostic.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line302">line 302</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line299">line 299</a>
     </li></ul></dd>
     
 
@@ -30098,7 +29815,7 @@ jobs in the scheduler queue have finished flushing.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line322">line 322</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line347">line 347</a>
     </li></ul></dd>
     
 
@@ -30620,7 +30337,7 @@ jobs in the scheduler queue have finished flushing.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line70">line 70</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line84">line 84</a>
     </li></ul></dd>
     
 
@@ -31334,173 +31051,6 @@ jobs in the scheduler queue have finished flushing.</p>
     
 
     
-    <h4 class="name" id="parseAttributes"><span class="type-signature"></span>parseAttributes<span class="signature">(attrStr)</span><span class="type-signature"> &rarr; {Object:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>, string:<a href="module-lib_core_reactive_journal-Journal.html"></a>>}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Parses an attribute string into a key-value object.</p>
-<p>Handles three attribute forms:</p>
-<ul>
-<li>Quoted values: <code>name=&quot;value&quot;</code> or <code>name='value'</code>. A backslash-escaped
-quote (<code>\&quot;</code> or <code>\'</code>) inside the value is preserved verbatim rather than
-ending the value early, so expressions containing an apostrophe or a
-quote character (e.g. <code>@click='say(\'hi\')'</code>) parse correctly instead
-of being split into several bogus attributes.</li>
-<li>Unquoted values: <code>name=value</code>, read up to the next whitespace or <code>&gt;</code>.</li>
-<li>Valueless boolean attributes: <code>disabled</code>, mapped to the string <code>'true'</code>
-(matching the <code>attr=&quot;true&quot;</code> / <code>attr=&quot;false&quot;</code> convention the runtime's
-boolean-attribute handling already expects, rather than <code>null</code>).</li>
-</ul>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>attrStr</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">string</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2114">line 2114</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">Object:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>, string:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
     <h4 class="name" id="parseDiagnostic"><span class="type-signature"></span>parseDiagnostic<span class="signature">(severity, args)</span><span class="type-signature"> &rarr; {object}</span></h4>
     
 
@@ -31842,204 +31392,6 @@ Matches dotenv behavior including single/double quotes and inline comments.</p>
     
 
     
-    <h4 class="name" id="parseHTML"><span class="type-signature"></span>parseHTML<span class="signature">(html, customVoidTags<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;<a href="HTMLNode.html">HTMLNode</a>:<a href="module-lib_core_reactive_journal-Journal.html"></a>>}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Parses an HTML string into a tree of HTMLNode elements with positional metadata.</p>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-        <th>Attributes</th>
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>html</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">string</span>
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>customVoidTags</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2216">line 2216</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;<a href="HTMLNode.html">HTMLNode</a>:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
     <h4 class="name" id="parseImports"><span class="type-signature"></span>parseImports<span class="signature">(source)</span><span class="type-signature"> &rarr; {Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;{statement:<a href="module-lib_core_reactive_journal-Journal.html"></a>: string:<a href="module-lib_core_reactive_journal-Journal.html"></a>, specifier:<a href="module-lib_core_reactive_journal-Journal.html"></a>: string:<a href="module-lib_core_reactive_journal-Journal.html"></a>, defaultName:<a href="module-lib_core_reactive_journal-Journal.html"></a>: (string:<a href="module-lib_core_reactive_journal-Journal.html"></a>|null:<a href="module-lib_core_reactive_journal-Journal.html"></a>), named:<a href="module-lib_core_reactive_journal-Journal.html"></a>: Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>>}>}</span></h4>
     
 
@@ -32141,7 +31493,7 @@ Matches dotenv behavior including single/double quotes and inline comments.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line437">line 437</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line434">line 434</a>
     </li></ul></dd>
     
 
@@ -32300,7 +31652,7 @@ Matches dotenv behavior including single/double quotes and inline comments.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line150">line 150</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line147">line 147</a>
     </li></ul></dd>
     
 
@@ -32641,7 +31993,7 @@ Supports camelCase, kebab-case, snake_case, and PascalCase.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line188">line 188</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line185">line 185</a>
     </li></ul></dd>
     
 
@@ -34659,7 +34011,7 @@ Converts data-ax-bind=&quot;expr&quot; to value=&quot;{{ expr }}&quot; and event
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line125">line 125</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line141">line 141</a>
     </li></ul></dd>
     
 
@@ -34796,7 +34148,7 @@ Converts data-ax-bind=&quot;expr&quot; to value=&quot;{{ expr }}&quot; and event
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line115">line 115</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line131">line 131</a>
     </li></ul></dd>
     
 
@@ -34934,7 +34286,7 @@ Deduplicates multiple calls to the same job.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line96">line 96</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line111">line 111</a>
     </li></ul></dd>
     
 
@@ -36786,7 +36138,7 @@ deployment. <code>avenx build</code> is unaffected.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line81">line 81</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line95">line 95</a>
     </li></ul></dd>
     
 
@@ -36946,7 +36298,7 @@ deployment. <code>avenx build</code> is unaffected.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line479">line 479</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line476">line 476</a>
     </li></ul></dd>
     
 
@@ -37465,7 +36817,7 @@ NODE_ENV.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler.js.html">lib/compiler.js</a>, <a href="lib_compiler.js.html#line50">line 50</a>
+        <a href="lib_compiler.js.html">lib/compiler.js</a>, <a href="lib_compiler.js.html#line72">line 72</a>
     </li></ul></dd>
     
 
@@ -39531,7 +38883,7 @@ impact follows edges into a node, why follows edges out of it.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="bin_commands_stats.js.html">bin/commands/stats.js</a>, <a href="bin_commands_stats.js.html#line277">line 277</a>
+        <a href="bin_commands_stats.js.html">bin/commands/stats.js</a>, <a href="bin_commands_stats.js.html#line289">line 289</a>
     </li></ul></dd>
     
 
@@ -40156,7 +39508,7 @@ inside strings, template literals or comments.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line60">line 60</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line57">line 57</a>
     </li></ul></dd>
     
 
@@ -40557,207 +39909,6 @@ selector delimiters and must be preserved.</p>
     <p>The scoped selector list.</p>
 </div>
 
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">string</span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="serializeHTML"><span class="type-signature"></span>serializeHTML<span class="signature">(nodes, customVoidTags<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {string}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Serializes an HTMLNode tree back to an HTML string.</p>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-        <th>Attributes</th>
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>nodes</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;<a href="HTMLNode.html">HTMLNode</a>:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>customVoidTags</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Array:<a href="module-lib_core_reactive_journal-Journal.html"></a>.&lt;string:<a href="module-lib_core_reactive_journal-Journal.html"></a>></span>
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"><p>Additional project-specific void tag
-names (lowercase), loaded from <code>avenx.config.json</code>. Should match what
-was passed to <a href="global.html#parseHTML">parseHTML</a> for the same template so a custom void
-tag round-trips consistently.</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_ComponentParser.js.html">lib/compiler/ComponentParser.js</a>, <a href="lib_compiler_ComponentParser.js.html#line2374">line 2374</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
 
 
 <dl>
@@ -42189,7 +41340,7 @@ Call without arguments to re-run the automatic detection.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line51">line 51</a>
+        <a href="lib_core_reactive_scheduler.js.html">lib/core/reactive/scheduler.js</a>, <a href="lib_core_reactive_scheduler.js.html#line65">line 65</a>
     </li></ul></dd>
     
 
@@ -43343,7 +42494,7 @@ nested styles such as <code>bold(cyan('text'))</code> intact.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line698">line 698</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line643">line 643</a>
     </li></ul></dd>
     
 
@@ -46077,7 +45228,7 @@ are not attributed to whichever render happened to trigger it.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line217">line 217</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line214">line 214</a>
     </li></ul></dd>
     
 
@@ -47990,7 +47141,7 @@ zero is the body.</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line235">line 235</a>
+        <a href="lib_compiler_BridgeParser.js.html">lib/compiler/BridgeParser.js</a>, <a href="lib_compiler_BridgeParser.js.html#line232">line 232</a>
     </li></ul></dd>
     
 
@@ -48926,7 +48077,7 @@ of the braces, or null when no body could be located.</p>
 
             
 
-            <td class="description last"><p>AVX_C09: A bridge module imports a module the bundler cannot inline.</p></td>
+            <td class="description last"><p>AVX_C09: Retired. A bridge may import any module the bundler can resolve; an unresolvable one is AVX_C17.</p></td>
         </tr>
 
     
@@ -49018,7 +48169,7 @@ of the braces, or null when no body could be located.</p>
 
             
 
-            <td class="description last"><p>AVX_C13: The prebuilt runtime bundle is missing from the package.</p></td>
+            <td class="description last"><p>AVX_C13: Retired. There is no prebuilt runtime; a missing install surfaces as AVX_C17.</p></td>
         </tr>
 
     
@@ -49088,6 +48239,98 @@ of the braces, or null when no body could be located.</p>
             
 
             <td class="description last"><p>AVX_C16: Two modules publish the same bundle-scope name.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_UNRESOLVED_IMPORT</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_C17: An import names a module that cannot be found.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_MISSING_EXPORT</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_C18: An import names something a module does not export.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_MODULE_UNREADABLE</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_C19: A module's import or export declarations could not be read.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_BUNDLE_CYCLE</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_C20: A module cycle carries a binding that cannot cross it.</p></td>
         </tr>
 
     
@@ -49295,6 +48538,29 @@ of the braces, or null when no body could be located.</p>
             
 
             <td class="description last"><p>AVX_W46: A PascalCase template tag resolves to no registered component, built-in, or known HTML/SVG element.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>COMPILER_RENDER_NOT_COMPILED</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>AVX_W47: A template could not be compiled to a render program and falls back to the string renderer.</p></td>
         </tr>
 
     
@@ -49852,13 +49118,13 @@ of the braces, or null when no body could be located.</p>
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_compiler_atlas_AppModel.html">lib/compiler/atlas/AppModel</a></li><li><a href="module-lib_compiler_atlas_build.html">lib/compiler/atlas/build</a></li><li><a href="module-lib_compiler_atlas_cache.html">lib/compiler/atlas/cache</a></li><li><a href="module-lib_compiler_atlas_diagnostics.html">lib/compiler/atlas/diagnostics</a></li><li><a href="module-lib_compiler_atlas_emit.html">lib/compiler/atlas/emit</a></li><li><a href="module-lib_compiler_atlas_query.html">lib/compiler/atlas/query</a></li><li><a href="module-lib_compiler_atlas_resolve.html">lib/compiler/atlas/resolve</a></li><li><a href="module-lib_compiler_atlas_routes.html">lib/compiler/atlas/routes</a></li><li><a href="module-lib_compiler_atlas_source.html">lib/compiler/atlas/source</a></li><li><a href="module-lib_compiler_bundle_moduleScope.html">lib/compiler/bundle/moduleScope</a></li><li><a href="module-lib_compiler_bundle_validate.html">lib/compiler/bundle/validate</a></li><li><a href="module-lib_compiler_parser_declarations.html">lib/compiler/parser/declarations</a></li><li><a href="module-lib_compiler_parser_tokenizer.html">lib/compiler/parser/tokenizer</a></li><li><a href="module-lib_compiler_rewind_diagnostics.html">lib/compiler/rewind/diagnostics</a></li><li><a href="module-lib_compiler_rewind_effects.html">lib/compiler/rewind/effects</a></li><li><a href="module-lib_compiler_rewind_writeSet.html">lib/compiler/rewind/writeSet</a></li><li><a href="module-lib_compiler_runtimeImports.html">lib/compiler/runtimeImports</a></li><li><a href="module-lib_compiler_sourceMapTrace.html">lib/compiler/sourceMapTrace</a></li><li><a href="module-lib_compiler_templateEvents.html">lib/compiler/templateEvents</a></li><li><a href="module-lib_compiler_validateExpressions.html">lib/compiler/validateExpressions</a></li><li><a href="module-lib_core_expression_compile.html">lib/core/expression/compile</a></li><li><a href="module-lib_core_expression_evaluator.html">lib/core/expression/evaluator</a></li><li><a href="module-lib_core_expression_parser.html">lib/core/expression/parser</a></li><li><a href="module-lib_core_index.html">lib/core/index</a></li><li><a href="module-lib_core_reactive_journal.html">lib/core/reactive/journal</a></li><li><a href="module-lib_core_reactive_scopeProxy.html">lib/core/reactive/scopeProxy</a></li><li><a href="module-lib_core_reactive_symbols.html">lib/core/reactive/symbols</a></li><li><a href="module-lib_core_runtime_AvenxGuard.html">lib/core/runtime/AvenxGuard</a></li><li><a href="module-lib_core_runtime_atomic.html">lib/core/runtime/atomic</a></li><li><a href="module-lib_core_security_urlPolicy.html">lib/core/security/urlPolicy</a></li><li><a href="module-lib_core_testing.html">lib/core/testing</a></li><li><a href="module-lib_core_tooling.html">lib/core/tooling</a></li><li><a href="module-lib_core_tooling_loadComponent.html">lib/core/tooling/loadComponent</a></li><li><a href="module-lib_core_trace_capture.html">lib/core/trace/capture</a></li><li><a href="module-lib_core_trace_contracts.html">lib/core/trace/contracts</a></li><li><a href="module-lib_core_trace_derived.html">lib/core/trace/derived</a></li><li><a href="module-lib_core_trace_devtools.html">lib/core/trace/devtools</a></li><li><a href="module-lib_core_trace_dom.html">lib/core/trace/dom</a></li><li><a href="module-lib_core_trace_exportTest.html">lib/core/trace/exportTest</a></li><li><a href="module-lib_core_trace_format.html">lib/core/trace/format</a></li><li><a href="module-lib_core_trace_globals.html">lib/core/trace/globals</a></li><li><a href="module-lib_core_trace_reactive.html">lib/core/trace/reactive</a></li><li><a href="module-lib_core_trace_recorder.html">lib/core/trace/recorder</a></li><li><a href="module-lib_core_trace_redact.html">lib/core/trace/redact</a></li><li><a href="module-lib_core_trace_replay.html">lib/core/trace/replay</a></li><li><a href="module-lib_core_trace_resource.html">lib/core/trace/resource</a></li><li><a href="module-lib_core_trace_schema.html">lib/core/trace/schema</a></li><li><a href="module-lib_core_trace_store.html">lib/core/trace/store</a></li><li><a href="module-lib_core_trace_tracer.html">lib/core/trace/tracer</a></li><li><a href="module-lib_core_trace_transaction.html">lib/core/trace/transaction</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DisposalScope.html">DisposalScope</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HTMLNode.html">HTMLNode</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li><li><a href="module-lib_compiler_atlas_AppModel.AppModel.html">AppModel</a></li><li><a href="module-lib_compiler_bundle_moduleScope.BundleScope.html">BundleScope</a></li><li><a href="module-lib_core_expression_evaluator-Frame.html">Frame</a></li><li><a href="module-lib_core_expression_parser.ExpressionParseError.html">ExpressionParseError</a></li><li><a href="module-lib_core_expression_parser-Parser.html">Parser</a></li><li><a href="module-lib_core_reactive_journal.JournalFrame.html">JournalFrame</a></li><li><a href="module-lib_core_reactive_journal-Journal.html">Journal</a></li><li><a href="module-lib_core_runtime_AvenxGuard.AvenxGuard.html">AvenxGuard</a></li><li><a href="module-lib_core_runtime_AvenxGuard.GuardContext.html">GuardContext</a></li><li><a href="module-lib_core_trace_recorder.TraceRecorder.html">TraceRecorder</a></li><li><a href="module-lib_core_trace_redact.Redactor.html">Redactor</a></li><li><a href="module-lib_core_trace_tracer-Tracer.html">Tracer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#ATOMIC_VALUE">ATOMIC_VALUE</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#BUILTIN_TAGS">BUILTIN_TAGS</a></li><li><a href="global.html#CONFIG_SCHEMA">CONFIG_SCHEMA</a></li><li><a href="global.html#CONFLICT_POLICIES">CONFLICT_POLICIES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DEFAULT_VOID_TAGS">DEFAULT_VOID_TAGS</a></li><li><a href="global.html#DIAGNOSTIC_CATALOGUE">DIAGNOSTIC_CATALOGUE</a></li><li><a href="global.html#FUNCTION_CONSTRUCTORS">FUNCTION_CONSTRUCTORS</a></li><li><a href="global.html#INSTANCE_API_KEYS">INSTANCE_API_KEYS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#IS_BRIDGE">IS_BRIDGE</a></li><li><a href="global.html#KNOWN_ELEMENTS">KNOWN_ELEMENTS</a></li><li><a href="global.html#LIVE_REGION_ID">LIVE_REGION_ID</a></li><li><a href="global.html#MAX_TRACE_BYTES">MAX_TRACE_BYTES</a></li><li><a href="global.html#NAMESPACE_GLOBAL">NAMESPACE_GLOBAL</a></li><li><a href="global.html#PROTECTED_PROTOTYPES">PROTECTED_PROTOTYPES</a></li><li><a href="global.html#PUBLIC_GLOBALS">PUBLIC_GLOBALS</a></li><li><a href="global.html#RESERVED_KEYS">RESERVED_KEYS</a></li><li><a href="global.html#RUNTIME_SPECIFIER">RUNTIME_SPECIFIER</a></li><li><a href="global.html#SET_NAME">SET_NAME</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#actionLabel">actionLabel</a></li><li><a href="global.html#activeScope">activeScope</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#age">age</a></li><li><a href="global.html#analyzeBridge">analyzeBridge</a></li><li><a href="global.html#analyzeBridgeFile">analyzeBridgeFile</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#announce">announce</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#assertNotFunctionConstructor">assertNotFunctionConstructor</a></li><li><a href="global.html#assertNotProtectedPrototype">assertNotProtectedPrototype</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blankComments">blankComments</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#bridge">bridge</a></li><li><a href="global.html#bridgeBindingName">bridgeBindingName</a></li><li><a href="global.html#bridgeNameFromFile">bridgeNameFromFile</a></li><li><a href="global.html#buildAstScope">buildAstScope</a></li><li><a href="global.html#buildAtomicSpec">buildAtomicSpec</a></li><li><a href="global.html#buildEventNode">buildEventNode</a></li><li><a href="global.html#buildModel">buildModel</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#buildVoidTagsSet">buildVoidTagsSet</a></li><li><a href="global.html#byJobId">byJobId</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#clearExpressionCache">clearExpressionCache</a></li><li><a href="global.html#cloneInitial">cloneInitial</a></li><li><a href="global.html#collectSemantics">collectSemantics</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#composeBundleSourceMap">composeBundleSourceMap</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createInterpolationRegex">createInterpolationRegex</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createRecursiveWatcherFallback">createRecursiveWatcherFallback</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#declarationCache">declarationCache</a></li><li><a href="global.html#declaredMembers">declaredMembers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#defineBridgeName">defineBridgeName</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#describe">describe</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#edgeLabel">edgeLabel</a></li><li><a href="global.html#emitBridge">emitBridge</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#explainDiagnostic">explainDiagnostic</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractEmittedEvents">extractEmittedEvents</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractSubscriptions">extractSubscriptions</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#failProcess">failProcess</a></li><li><a href="global.html#findBridgeImports">findBridgeImports</a></li><li><a href="global.html#findComponentSource">findComponentSource</a></li><li><a href="global.html#findDefinitionBrace">findDefinitionBrace</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushDepth">flushDepth</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#flushPromises">flushPromises</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#generateTemplateSourceMap">generateTemplateSourceMap</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getDiagnostic">getDiagnostic</a></li><li><a href="global.html#getExpressionCacheStats">getExpressionCacheStats</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOrCreateLiveRegion">getOrCreateLiveRegion</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getScope">getScope</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDependentOnPath">hasDependentOnPath</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isBridge">isBridge</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isDeniedProjectPath">isDeniedProjectPath</a></li><li><a href="global.html#isInsideRoot">isInsideRoot</a></li><li><a href="global.html#isReactive">isReactive</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#isUnused">isUnused</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#loadSidecar">loadSidecar</a></li><li><a href="global.html#manageFocus">manageFocus</a></li><li><a href="global.html#markRaw">markRaw</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maskSecret">maskSecret</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#memberBodySpan">memberBodySpan</a></li><li><a href="global.html#memberParams">memberParams</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#normalizeCode">normalizeCode</a></li><li><a href="global.html#numericFlag">numericFlag</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#onScopeDispose">onScopeDispose</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseAttributes">parseAttributes</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseHTML">parseHTML</a></li><li><a href="global.html#parseImports">parseImports</a></li><li><a href="global.html#parseMember">parseMember</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseObjectMembers">parseObjectMembers</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#parserInstance">parserInstance</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#positional">positional</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#printNoTraces">printNoTraces</a></li><li><a href="global.html#printTree">printTree</a></li><li><a href="global.html#printUnresolved">printUnresolved</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#readDeclarations">readDeclarations</a></li><li><a href="global.html#readEnvFileMeta">readEnvFileMeta</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportAmbiguous">reportAmbiguous</a></li><li><a href="global.html#reportFatal">reportFatal</a></li><li><a href="global.html#reportRebuildFailure">reportRebuildFailure</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveBridgeSpecifier">resolveBridgeSpecifier</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolveMode">resolveMode</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#resolveRequestPath">resolveRequestPath</a></li><li><a href="global.html#runAtlas">runAtlas</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runEnv">runEnv</a></li><li><a href="global.html#runHook">runHook</a></li><li><a href="global.html#runInScope">runInScope</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runQuery">runQuery</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runTrace">runTrace</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#sanitizeUrlsIn">sanitizeUrlsIn</a></li><li><a href="global.html#scanObjectLiteral">scanObjectLiteral</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeHTML">serializeHTML</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setExpressionCacheCapacity">setExpressionCacheCapacity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#sharedParser">sharedParser</a></li><li><a href="global.html#shouldGenerateTest">shouldGenerateTest</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#suggestCodes">suggestCodes</a></li><li><a href="global.html#suggestName">suggestName</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#toRaw">toRaw</a></li><li><a href="global.html#traceExport">traceExport</a></li><li><a href="global.html#traceList">traceList</a></li><li><a href="global.html#tracePrune">tracePrune</a></li><li><a href="global.html#traceView">traceView</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#untracked">untracked</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#unwrapAtomic">unwrapAtomic</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#wantsJson">wantsJson</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchDirectory">watchDirectory</a></li><li><a href="global.html#watchEffect">watchEffect</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#wrappedFunctionBodySpan">wrappedFunctionBodySpan</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_bundler.html">lib/bundler</a></li><li><a href="module-lib_bundler_emit.html">lib/bundler/emit</a></li><li><a href="module-lib_bundler_graph.html">lib/bundler/graph</a></li><li><a href="module-lib_bundler_minify.html">lib/bundler/minify</a></li><li><a href="module-lib_bundler_parseModule.html">lib/bundler/parseModule</a></li><li><a href="module-lib_bundler_resolve.html">lib/bundler/resolve</a></li><li><a href="module-lib_bundler_scanner.html">lib/bundler/scanner</a></li><li><a href="module-lib_bundler_treeshake.html">lib/bundler/treeshake</a></li><li><a href="module-lib_compiler_atlas_AppModel.html">lib/compiler/atlas/AppModel</a></li><li><a href="module-lib_compiler_atlas_build.html">lib/compiler/atlas/build</a></li><li><a href="module-lib_compiler_atlas_cache.html">lib/compiler/atlas/cache</a></li><li><a href="module-lib_compiler_atlas_diagnostics.html">lib/compiler/atlas/diagnostics</a></li><li><a href="module-lib_compiler_atlas_emit.html">lib/compiler/atlas/emit</a></li><li><a href="module-lib_compiler_atlas_query.html">lib/compiler/atlas/query</a></li><li><a href="module-lib_compiler_atlas_resolve.html">lib/compiler/atlas/resolve</a></li><li><a href="module-lib_compiler_atlas_routes.html">lib/compiler/atlas/routes</a></li><li><a href="module-lib_compiler_atlas_source.html">lib/compiler/atlas/source</a></li><li><a href="module-lib_compiler_bundle_validate.html">lib/compiler/bundle/validate</a></li><li><a href="module-lib_compiler_modules.html">lib/compiler/modules</a></li><li><a href="module-lib_compiler_parser_declarations.html">lib/compiler/parser/declarations</a></li><li><a href="module-lib_compiler_parser_htmlTree.html">lib/compiler/parser/htmlTree</a></li><li><a href="module-lib_compiler_parser_tokenizer.html">lib/compiler/parser/tokenizer</a></li><li><a href="module-lib_compiler_render_compileTemplate.html">lib/compiler/render/compileTemplate</a></li><li><a href="module-lib_compiler_render_program.html">lib/compiler/render/program</a></li><li><a href="module-lib_compiler_rewind_diagnostics.html">lib/compiler/rewind/diagnostics</a></li><li><a href="module-lib_compiler_rewind_effects.html">lib/compiler/rewind/effects</a></li><li><a href="module-lib_compiler_rewind_writeSet.html">lib/compiler/rewind/writeSet</a></li><li><a href="module-lib_compiler_sourceMapTrace.html">lib/compiler/sourceMapTrace</a></li><li><a href="module-lib_compiler_templateEvents.html">lib/compiler/templateEvents</a></li><li><a href="module-lib_compiler_validateExpressions.html">lib/compiler/validateExpressions</a></li><li><a href="module-lib_core_expression_compile.html">lib/core/expression/compile</a></li><li><a href="module-lib_core_expression_evaluator.html">lib/core/expression/evaluator</a></li><li><a href="module-lib_core_expression_parser.html">lib/core/expression/parser</a></li><li><a href="module-lib_core_index.html">lib/core/index</a></li><li><a href="module-lib_core_reactive_journal.html">lib/core/reactive/journal</a></li><li><a href="module-lib_core_reactive_scopeProxy.html">lib/core/reactive/scopeProxy</a></li><li><a href="module-lib_core_reactive_symbols.html">lib/core/reactive/symbols</a></li><li><a href="module-lib_core_renderer_program_CompiledTemplate.html">lib/core/renderer/program/CompiledTemplate</a></li><li><a href="module-lib_core_renderer_program_TemplateInstance.html">lib/core/renderer/program/TemplateInstance</a></li><li><a href="module-lib_core_renderer_program_bindings.html">lib/core/renderer/program/bindings</a></li><li><a href="module-lib_core_runtime_AvenxGuard.html">lib/core/runtime/AvenxGuard</a></li><li><a href="module-lib_core_runtime_atomic.html">lib/core/runtime/atomic</a></li><li><a href="module-lib_core_security_urlPolicy.html">lib/core/security/urlPolicy</a></li><li><a href="module-lib_core_testing.html">lib/core/testing</a></li><li><a href="module-lib_core_tooling.html">lib/core/tooling</a></li><li><a href="module-lib_core_tooling_loadComponent.html">lib/core/tooling/loadComponent</a></li><li><a href="module-lib_core_trace_capture.html">lib/core/trace/capture</a></li><li><a href="module-lib_core_trace_contracts.html">lib/core/trace/contracts</a></li><li><a href="module-lib_core_trace_derived.html">lib/core/trace/derived</a></li><li><a href="module-lib_core_trace_devtools.html">lib/core/trace/devtools</a></li><li><a href="module-lib_core_trace_dom.html">lib/core/trace/dom</a></li><li><a href="module-lib_core_trace_exportTest.html">lib/core/trace/exportTest</a></li><li><a href="module-lib_core_trace_format.html">lib/core/trace/format</a></li><li><a href="module-lib_core_trace_globals.html">lib/core/trace/globals</a></li><li><a href="module-lib_core_trace_reactive.html">lib/core/trace/reactive</a></li><li><a href="module-lib_core_trace_recorder.html">lib/core/trace/recorder</a></li><li><a href="module-lib_core_trace_redact.html">lib/core/trace/redact</a></li><li><a href="module-lib_core_trace_replay.html">lib/core/trace/replay</a></li><li><a href="module-lib_core_trace_resource.html">lib/core/trace/resource</a></li><li><a href="module-lib_core_trace_schema.html">lib/core/trace/schema</a></li><li><a href="module-lib_core_trace_store.html">lib/core/trace/store</a></li><li><a href="module-lib_core_trace_tracer.html">lib/core/trace/tracer</a></li><li><a href="module-lib_core_trace_transaction.html">lib/core/trace/transaction</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DisposalScope.html">DisposalScope</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li><li><a href="module-lib_bundler_emit.EmitError.html">EmitError</a></li><li><a href="module-lib_bundler_graph.BindingError.html">BindingError</a></li><li><a href="module-lib_bundler_graph.DynamicImportError.html">DynamicImportError</a></li><li><a href="module-lib_bundler_graph.ModuleGraph.html">ModuleGraph</a></li><li><a href="module-lib_bundler_parseModule.ModuleParseError.html">ModuleParseError</a></li><li><a href="module-lib_bundler_resolve.ResolveError.html">ResolveError</a></li><li><a href="module-lib_bundler_resolve.Resolver.html">Resolver</a></li><li><a href="module-lib_bundler_scanner.CodeMask.html">CodeMask</a></li><li><a href="module-lib_compiler_atlas_AppModel.AppModel.html">AppModel</a></li><li><a href="module-lib_compiler_parser_htmlTree.HTMLNode.html">HTMLNode</a></li><li><a href="module-lib_core_expression_evaluator-Frame.html">Frame</a></li><li><a href="module-lib_core_expression_parser.ExpressionParseError.html">ExpressionParseError</a></li><li><a href="module-lib_core_expression_parser-Parser.html">Parser</a></li><li><a href="module-lib_core_reactive_journal.JournalFrame.html">JournalFrame</a></li><li><a href="module-lib_core_reactive_journal-Journal.html">Journal</a></li><li><a href="module-lib_core_renderer_program_CompiledTemplate.CompiledTemplate.html">CompiledTemplate</a></li><li><a href="module-lib_core_renderer_program_TemplateInstance.TemplateInstance.html">TemplateInstance</a></li><li><a href="module-lib_core_runtime_AvenxGuard.AvenxGuard.html">AvenxGuard</a></li><li><a href="module-lib_core_runtime_AvenxGuard.GuardContext.html">GuardContext</a></li><li><a href="module-lib_core_trace_recorder.TraceRecorder.html">TraceRecorder</a></li><li><a href="module-lib_core_trace_redact.Redactor.html">Redactor</a></li><li><a href="module-lib_core_trace_tracer-Tracer.html">Tracer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#ATOMIC_VALUE">ATOMIC_VALUE</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#BUILTIN_TAGS">BUILTIN_TAGS</a></li><li><a href="global.html#BUNDLE_SIZE_WARNING_THRESHOLD_KB">BUNDLE_SIZE_WARNING_THRESHOLD_KB</a></li><li><a href="global.html#CONFIG_SCHEMA">CONFIG_SCHEMA</a></li><li><a href="global.html#CONFLICT_POLICIES">CONFLICT_POLICIES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DIAGNOSTIC_CATALOGUE">DIAGNOSTIC_CATALOGUE</a></li><li><a href="global.html#FUNCTION_CONSTRUCTORS">FUNCTION_CONSTRUCTORS</a></li><li><a href="global.html#INSTANCE_API_KEYS">INSTANCE_API_KEYS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#IS_BRIDGE">IS_BRIDGE</a></li><li><a href="global.html#KNOWN_ELEMENTS">KNOWN_ELEMENTS</a></li><li><a href="global.html#LIVE_REGION_ID">LIVE_REGION_ID</a></li><li><a href="global.html#MAX_TRACE_BYTES">MAX_TRACE_BYTES</a></li><li><a href="global.html#NAMESPACE_GLOBAL">NAMESPACE_GLOBAL</a></li><li><a href="global.html#PROTECTED_PROTOTYPES">PROTECTED_PROTOTYPES</a></li><li><a href="global.html#PUBLIC_GLOBALS">PUBLIC_GLOBALS</a></li><li><a href="global.html#RESERVED_KEYS">RESERVED_KEYS</a></li><li><a href="global.html#RUNTIME_SPECIFIER">RUNTIME_SPECIFIER</a></li><li><a href="global.html#SET_NAME">SET_NAME</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#actionLabel">actionLabel</a></li><li><a href="global.html#activeScope">activeScope</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#age">age</a></li><li><a href="global.html#analyzeBridge">analyzeBridge</a></li><li><a href="global.html#analyzeBridgeFile">analyzeBridgeFile</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#announce">announce</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#assertNotFunctionConstructor">assertNotFunctionConstructor</a></li><li><a href="global.html#assertNotProtectedPrototype">assertNotProtectedPrototype</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blankComments">blankComments</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#bridge">bridge</a></li><li><a href="global.html#bridgeBindingName">bridgeBindingName</a></li><li><a href="global.html#bridgeNameFromFile">bridgeNameFromFile</a></li><li><a href="global.html#buildAstScope">buildAstScope</a></li><li><a href="global.html#buildAtomicSpec">buildAtomicSpec</a></li><li><a href="global.html#buildEventNode">buildEventNode</a></li><li><a href="global.html#buildModel">buildModel</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#byJobId">byJobId</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#clearExpressionCache">clearExpressionCache</a></li><li><a href="global.html#cloneInitial">cloneInitial</a></li><li><a href="global.html#collectImportBindings">collectImportBindings</a></li><li><a href="global.html#collectSemantics">collectSemantics</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#composeBundleSourceMap">composeBundleSourceMap</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createInterpolationRegex">createInterpolationRegex</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createRecursiveWatcherFallback">createRecursiveWatcherFallback</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#declarationCache">declarationCache</a></li><li><a href="global.html#declaredMembers">declaredMembers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#defineBridgeName">defineBridgeName</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#describe">describe</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#edgeLabel">edgeLabel</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#explainDiagnostic">explainDiagnostic</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractEmittedEvents">extractEmittedEvents</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractSubscriptions">extractSubscriptions</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#failProcess">failProcess</a></li><li><a href="global.html#findBridgeImports">findBridgeImports</a></li><li><a href="global.html#findComponentSource">findComponentSource</a></li><li><a href="global.html#findDefinitionBrace">findDefinitionBrace</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushDepth">flushDepth</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#flushPromises">flushPromises</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#generateTemplateSourceMap">generateTemplateSourceMap</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getDiagnostic">getDiagnostic</a></li><li><a href="global.html#getExpressionCacheStats">getExpressionCacheStats</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getOrCreateLiveRegion">getOrCreateLiveRegion</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getScope">getScope</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDependentOnPath">hasDependentOnPath</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isBridge">isBridge</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isDeniedProjectPath">isDeniedProjectPath</a></li><li><a href="global.html#isInsideRoot">isInsideRoot</a></li><li><a href="global.html#isReactive">isReactive</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#isUnused">isUnused</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#loadSidecar">loadSidecar</a></li><li><a href="global.html#manageFocus">manageFocus</a></li><li><a href="global.html#markRaw">markRaw</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maskSecret">maskSecret</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#memberBodySpan">memberBodySpan</a></li><li><a href="global.html#memberParams">memberParams</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#normalizeCode">normalizeCode</a></li><li><a href="global.html#numericFlag">numericFlag</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#onScopeDispose">onScopeDispose</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseImports">parseImports</a></li><li><a href="global.html#parseMember">parseMember</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseObjectMembers">parseObjectMembers</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#parserInstance">parserInstance</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#positional">positional</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#printNoTraces">printNoTraces</a></li><li><a href="global.html#printTree">printTree</a></li><li><a href="global.html#printUnresolved">printUnresolved</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#queued">queued</a></li><li><a href="global.html#readDeclarations">readDeclarations</a></li><li><a href="global.html#readEnvFileMeta">readEnvFileMeta</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportAmbiguous">reportAmbiguous</a></li><li><a href="global.html#reportFatal">reportFatal</a></li><li><a href="global.html#reportRebuildFailure">reportRebuildFailure</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveBridgeSpecifier">resolveBridgeSpecifier</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolveMode">resolveMode</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#resolveRequestPath">resolveRequestPath</a></li><li><a href="global.html#runAtlas">runAtlas</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runEnv">runEnv</a></li><li><a href="global.html#runHook">runHook</a></li><li><a href="global.html#runInScope">runInScope</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runQuery">runQuery</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runTrace">runTrace</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#sanitizeUrlsIn">sanitizeUrlsIn</a></li><li><a href="global.html#scanObjectLiteral">scanObjectLiteral</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setExpressionCacheCapacity">setExpressionCacheCapacity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#sharedParser">sharedParser</a></li><li><a href="global.html#shouldGenerateTest">shouldGenerateTest</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#suggestCodes">suggestCodes</a></li><li><a href="global.html#suggestName">suggestName</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#toRaw">toRaw</a></li><li><a href="global.html#traceExport">traceExport</a></li><li><a href="global.html#traceList">traceList</a></li><li><a href="global.html#tracePrune">tracePrune</a></li><li><a href="global.html#traceView">traceView</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#untracked">untracked</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#unwrapAtomic">unwrapAtomic</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#wantsJson">wantsJson</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchDirectory">watchDirectory</a></li><li><a href="global.html#watchEffect">watchEffect</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#wrappedFunctionBodySpan">wrappedFunctionBodySpan</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Sep 07 2026 21:08:00 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Wed Sep 09 2026 20:21:15 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

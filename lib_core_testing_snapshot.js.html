@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Module: lib/bundler/minify</title>
+    <title>JSDoc: Source: lib/core/testing/snapshot.js</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,313 +17,297 @@
 
 <div id="main">
 
-    <h1 class="page-title">Module: lib/bundler/minify</h1>
+    <h1 class="page-title">Source: lib/core/testing/snapshot.js</h1>
 
     
 
 
 
-
-<section>
-
-<header>
     
-        
-            
-        
-    
-</header>
-
-<article>
-    <div class="container-overview">
-    
-        
-            <div class="description"><p>Removes what a browser does not need, and nothing else.</p>
-<h2>What this does, stated precisely</h2>
-<p>Comments are deleted. Leading and trailing whitespace is trimmed from every
-line whose margins are code rather than the inside of a string or a template
-literal. That is the whole transformation.</p>
-<p>It does <strong>not</strong> rename identifiers, fold constants, remove dead branches or
-join statements. Those need a real ECMAScript parser to do safely, and a
-minifier that guesses produces a bundle that is smaller and wrong — which is
-strictly worse than one that is larger and right. The size this leaves on the
-table is reported honestly rather than closed by guessing.</p>
-<h2>One property worth the constraint</h2>
-<p>Line count is preserved exactly. A deleted block comment leaves its newlines
-behind; trimming touches only the margins. So the source map emitted for a
-development build is equally valid for the minified production build, and a
-production stack trace still names a file and a line the developer wrote.
-Most minifiers buy their last few per cent by giving that up.</p>
-<p>Comments and indentation are also what gzip compresses best, so the gap
-between this and an identifier-mangling minifier is much narrower on the wire
-than it is on disk. The build reports both numbers.</p></div>
-        
-
-        
-            
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_bundler_minify.js.html">lib/bundler/minify.js</a>, <a href="lib_bundler_minify.js.html#line1">line 1</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-    
-    </div>
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-        <h3 class="subsection-title">Methods</h3>
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id=".minify"><span class="type-signature">(static) </span>minify<span class="signature">(code)</span><span class="type-signature"> &rarr; {string}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    <p>Strips comments and indentation from emitted JavaScript.</p>
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>code</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">string</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>The bundle source.</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lib_bundler_minify.js.html">lib/bundler/minify.js</a>, <a href="lib_bundler_minify.js.html#line38">line 38</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-<div class="param-desc">
-    <p>The same program, with comments and margins removed.</p>
-</div>
-
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">string</span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-    
-
-    
-
-    
-</article>
-
-</section>
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Registry tracking used snapshots per test file to detect obsolete entries
+const fileSnapshotRegistry = new Map();
+
+/**
+ * Normalizes and formats DOM nodes or raw HTML strings into stable, deterministic markup.
+ * Sorts attributes alphabetically, trims whitespace, and applies mask rules for volatile data.
+ *
+ * @param {Element|string|any} input
+ * @param {object} [options={}]
+ * @param {Array&lt;{match: RegExp|string, replace: string}>} [options.masks=[]]
+ * @returns {string}
+ */
+export function serializeSnapshot(input, options = {}) {
+  const { masks = [] } = options;
+
+  // If input is an element node directly, format it directly
+  if (input &amp;&amp; typeof input === 'object' &amp;&amp; input.nodeType === 1) {
+    let formatted = formatNode(input, 0);
+    const defaultMasks = [
+      { match: /\bax-[a-f0-9]{6,}\b/g, replace: 'ax-[hash]' },
+      { match: /data-ax-[a-f0-9]{6,}/g, replace: 'data-ax-[hash]' },
+    ];
+    for (const { match, replace } of [...defaultMasks, ...masks]) {
+      formatted = formatted.replace(match, replace);
+    }
+    return formatted;
+  }
+
+  let raw = '';
+  if (typeof input === 'string') {
+    raw = input.trim();
+  } else if (input &amp;&amp; typeof input.outerHTML === 'string') {
+    raw = input.outerHTML.trim();
+  } else if (input &amp;&amp; typeof input.innerHTML === 'string') {
+    raw = input.innerHTML.trim();
+  } else {
+    raw = String(input ?? '');
+  }
+
+  let formatted = '';
+  if (
+    typeof document !== 'undefined' &amp;&amp;
+    typeof document.createElement === 'function'
+  ) {
+    try {
+      const template = document.createElement('template');
+      template.innerHTML = raw;
+      const rootNodes = template.content?.childNodes || template.childNodes || [];
+      formatted = Array.from(rootNodes)
+        .map((node) => formatNode(node, 0))
+        .filter(Boolean)
+        .join('\n');
+    } catch {
+      formatted = formatHtmlStringFallback(raw);
+    }
+  }
+
+  if (!formatted) {
+    formatted = formatHtmlStringFallback(raw);
+  }
+
+  const defaultMasks = [
+    { match: /\bax-[a-f0-9]{6,}\b/g, replace: 'ax-[hash]' },
+    { match: /data-ax-[a-f0-9]{6,}/g, replace: 'data-ax-[hash]' },
+  ];
+
+  let masked = formatted;
+  for (const { match, replace } of [...defaultMasks, ...masks]) {
+    masked = masked.replace(match, replace);
+  }
+
+  return masked;
+}
+
+function formatNode(node, depth) {
+  const indent = '  '.repeat(depth);
+
+  if (node.nodeType === 3) {
+    // Text node
+    const text = (node.textContent || '').trim();
+    return text ? `${indent}${text}` : '';
+  }
+
+  if (node.nodeType === 8) {
+    // Comment
+    const comment = (node.textContent || '').trim();
+    return `${indent}&lt;!-- ${comment} -->`;
+  }
+
+  if (node.nodeType === 1) {
+    // Element
+    const tag = node.tagName.toLowerCase();
+    const attrs = Array.from(node.attributes || [])
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((attr) => {
+        if (attr.value === '' || attr.value === null) return attr.name;
+        return `${attr.name}="${attr.value}"`;
+      });
+
+    const attrStr = attrs.length > 0 ? ' ' + attrs.join(' ') : '';
+    const children = Array.from(node.childNodes)
+      .map((child) => formatNode(child, depth + 1))
+      .filter(Boolean);
+
+    const selfClosingTags = new Set([
+      'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+      'link', 'meta', 'param', 'source', 'track', 'wbr'
+    ]);
+
+    if (children.length === 0) {
+      if (selfClosingTags.has(tag)) {
+        return `${indent}&lt;${tag}${attrStr} />`;
+      }
+      return `${indent}&lt;${tag}${attrStr}>&lt;/${tag}>`;
+    }
+
+    if (children.length === 1 &amp;&amp; !children[0].includes('\n') &amp;&amp; !children[0].startsWith('  '.repeat(depth + 1) + '&lt;')) {
+      const inlineText = children[0].trim();
+      return `${indent}&lt;${tag}${attrStr}>${inlineText}&lt;/${tag}>`;
+    }
+
+    return `${indent}&lt;${tag}${attrStr}>\n${children.join('\n')}\n${indent}&lt;/${tag}>`;
+  }
+
+  return '';
+}
+
+function formatHtmlStringFallback(html) {
+  return html
+    .replace(/>\s*&lt;/g, '>&lt;')
+    .replace(/(&lt;[a-zA-Z0-9-]+)(\s+[^>]+)?(\/?>)/g, (_, open, attrs, close) => {
+      if (!attrs) return `${open}${close}`;
+      const sortedAttrs = attrs
+        .trim()
+        .split(/\s+(?=[a-zA-Z_:@-])/)
+        .sort((a, b) => a.localeCompare(b))
+        .join(' ');
+      return `${open} ${sortedAttrs}${close}`;
+    });
+}
+
+/**
+ * Computes a readable line-by-line diff between expected and received strings.
+ */
+export function generateDiff(expected, received) {
+  const expLines = (expected || '').split('\n');
+  const recLines = (received || '').split('\n');
+
+  const lines = ['Snapshot difference:'];
+  const max = Math.max(expLines.length, recLines.length);
+
+  for (let i = 0; i &lt; max; i++) {
+    const exp = expLines[i];
+    const rec = recLines[i];
+
+    if (exp === rec) {
+      lines.push(`  ${exp ?? ''}`);
+    } else {
+      if (exp !== undefined) lines.push(`- ${exp}`);
+      if (rec !== undefined) lines.push(`+ ${rec}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Resolves the caller test file path using stack traces.
+ */
+function resolveCallingTestFile() {
+  const originalPrepare = Error.prepareStackTrace;
+  try {
+    Error.prepareStackTrace = (_, stack) => stack;
+    const err = new Error();
+    const stack = err.stack;
+
+    if (Array.isArray(stack)) {
+      for (const frame of stack) {
+        let filename = frame.getFileName();
+        if (!filename) continue;
+        if (filename.startsWith('file://')) {
+          filename = fileURLToPath(filename);
+        }
+        if (filename.includes('.test.js') || filename.includes('.spec.js')) {
+          return filename;
+        }
+      }
+    }
+  } finally {
+    Error.prepareStackTrace = originalPrepare;
+  }
+  return null;
+}
+
+/**
+ * Asserts that the received DOM node, wrapper, or HTML matches a persisted snapshot.
+ *
+ * @param {Element|string|object} received
+ * @param {string} [name='default']
+ * @param {object} [options={}]
+ * @param {string} [options.testFile] Explicit test file path if stack inference is unavailable
+ * @param {Array&lt;{match: RegExp|string, replace: string}>} [options.masks=[]]
+ */
+export function assertSnapshot(received, name = 'default', options = {}) {
+  const testFile = options.testFile || resolveCallingTestFile();
+
+  if (!testFile) {
+    throw new Error(
+      'assertSnapshot: Could not infer calling test file. Pass options.testFile explicitly.'
+    );
+  }
+
+  const snapshotDir = path.join(path.dirname(testFile), '__snapshots__');
+  const snapshotFile = path.join(snapshotDir, `${path.basename(testFile)}.snap`);
+
+  const serialized = serializeSnapshot(received, options);
+  const isCI = Boolean(process.env.CI &amp;&amp; process.env.CI !== 'false' &amp;&amp; process.env.CI !== '0');
+  const isUpdate = Boolean(process.env.AVENX_UPDATE_SNAPSHOTS === '1' || process.env.UPDATE_SNAPSHOTS === '1');
+
+  let snapshots = {};
+  if (fs.existsSync(snapshotFile)) {
+    try {
+      snapshots = JSON.parse(fs.readFileSync(snapshotFile, 'utf8'));
+    } catch {
+      snapshots = {};
+    }
+  }
+
+  if (!fileSnapshotRegistry.has(snapshotFile)) {
+    fileSnapshotRegistry.set(snapshotFile, new Set());
+  }
+  fileSnapshotRegistry.get(snapshotFile).add(name);
+
+  if (!(name in snapshots)) {
+    if (isCI &amp;&amp; !isUpdate) {
+      throw new Error(
+        `Snapshot "${name}" does not exist in CI mode for "${path.basename(testFile)}". Missing snapshot must fail in CI.`
+      );
+    }
+    snapshots[name] = serialized;
+    fs.mkdirSync(snapshotDir, { recursive: true });
+    fs.writeFileSync(snapshotFile, JSON.stringify(snapshots, null, 2) + '\n', 'utf8');
+    return;
+  }
+
+  const expected = snapshots[name];
+  if (expected !== serialized) {
+    if (isUpdate) {
+      snapshots[name] = serialized;
+      fs.writeFileSync(snapshotFile, JSON.stringify(snapshots, null, 2) + '\n', 'utf8');
+      return;
+    }
+
+    const diff = generateDiff(expected, serialized);
+    const error = new Error(`Snapshot mismatch for "${name}" in "${path.basename(testFile)}"\n\n${diff}`);
+    error.expected = expected;
+    error.actual = serialized;
+    throw error;
+  }
+}
+
+/**
+ * Returns any snapshots found in the file that were not executed during the test suite.
+ */
+export function getObsoleteSnapshots(testFile) {
+  const snapshotFile = path.join(path.dirname(testFile), '__snapshots__', `${path.basename(testFile)}.snap`);
+  if (!fs.existsSync(snapshotFile)) return [];
+
+  try {
+    const snapshots = JSON.parse(fs.readFileSync(snapshotFile, 'utf8'));
+    const used = fileSnapshotRegistry.get(snapshotFile) || new Set();
+    return Object.keys(snapshots).filter((key) => !used.has(key));
+  } catch {
+    return [];
+  }
+}</code></pre>
+        </article>
+    </section>
 
 
 

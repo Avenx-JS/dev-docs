@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/compiler/ir/build.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/compiler/ir/build.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @file build.js
+ * @description Builds the template IR from template source.
+ *
+ * This runs on the template as the developer wrote it -- after declarations and
+ * imports are removed and scoped-CSS classes are applied, but *before* any
+ * directive rewriting. That ordering is the whole point: reading `&lt;@for item in
+ * items>` directly is what lets the compiler record that it is a loop over
+ * `items` binding `item`, instead of rewriting it into a `&lt;template>` element
+ * and asking the runtime to work that out again.
+ *
+ * ## What it refuses
+ *
+ * A construct the IR does not model yet aborts the build of that template with
+ * a {@link IRRefusal} naming the construct. The caller keeps the legacy path
+ * for that component and the build reports it. There is no partial IR, for the
+ * same reason there is no partial render program: two descriptions of one
+ * template disagree eventually, and the disagreement is unattributable.
+ * @module lib/compiler/ir/build
+ */
+
+import { parseHTML } from '../parser/htmlTree.js';
+import { createInterpolationRegex } from '../../core/utils/templateUtils.js';
+import { isBooleanAttribute } from '../../core/renderer/constants.js';
+import {
+  BindingKind,
+  IRRefusal,
+  RefusalReason,
+  comment,
+  component,
+  conditional,
+  element,
+  fragment,
+  deferred,
+  interpolation,
+  iteration,
+  slot,
+  text,
+} from './nodes.js';
+
+/**
+ * Directive tags the IR does not model yet, mapped to the reason reported.
+ * @type {Map&lt;string, string>}
+ */
+const UNMODELLED_TAGS = new Map([
+  ['@suspense', RefusalReason.SUSPENSE],
+  ['@fallback', RefusalReason.SUSPENSE],
+  ['@errorboundary', RefusalReason.ERROR_BOUNDARY],
+  ['@deadlock', RefusalReason.DEADLOCK],
+  ['transition', RefusalReason.TRANSITION],
+  ['resource', RefusalReason.RESOURCE],
+  ['virtuallist', RefusalReason.VIRTUAL_LIST],
+  ['routerview', RefusalReason.ROUTER_VIEW],
+]);
+
+/**
+ * Attributes whose presence means the element needs machinery the IR does not
+ * model, mapped to the reason reported.
+ * @type {Array&lt;string[]>}
+ */
+const UNMODELLED_ATTRS = [
+  ['data-ax-ref', RefusalReason.REF],
+  ['data-ax-validate', RefusalReason.VALIDATION],
+  ['data-ax-router-view', RefusalReason.ROUTER_VIEW],
+  ['data-ax-dyn-attrs', RefusalReason.DYNAMIC_ATTR],
+  ['data-avenx-comp-dynamic', RefusalReason.DYNAMIC_COMPONENT],
+  ['data-ax-transition', RefusalReason.TRANSITION],
+];
+
+/**
+ * Directive attributes that become bindings rather than markup.
+ * @type {Map&lt;string, string>}
+ */
+const DIRECTIVE_BINDINGS = new Map([
+  ['data-ax-show', BindingKind.SHOW],
+  ['data-ax-class', BindingKind.CLASS],
+  ['data-ax-html', BindingKind.HTML],
+  ['data-ax-style', BindingKind.STYLE],
+]);
+
+/**
+ * Whether a string contains a template interpolation.
+ * @param {string} value - The text to test.
+ * @returns {boolean} True when it contains `{{ }}` or `{{{ }}}`.
+ */
+function hasInterpolation(value) {
+  return typeof value === 'string' &amp;&amp; value.includes('{{');
+}
+
+/**
+ * Splits text into literal and expression segments, in order.
+ * @param {string} source - The source text.
+ * @returns {Array&lt;{expr: string|null, raw: boolean, value: string}>} The segments.
+ */
+export function splitInterpolations(source) {
+  const segments = [];
+  const regex = createInterpolationRegex();
+  let last = 0;
+  let match;
+
+  while ((match = regex.exec(source)) !== null) {
+    if (match.index > last) {
+      segments.push({ expr: null, raw: false, value: source.slice(last, match.index) });
+    }
+    const raw = match[1] !== undefined;
+    segments.push({ expr: (raw ? match[1] : match[2]).trim(), raw, value: '' });
+    last = regex.lastIndex;
+  }
+
+  if (last &lt; source.length) {
+    segments.push({ expr: null, raw: false, value: source.slice(last) });
+  }
+  return segments;
+}
+
+/**
+ * Finds the offset of a top-level occurrence of a keyword in an expression.
+ *
+ * "Top level" means outside quotes and outside every bracket pair, so the `in`
+ * of `&lt;@for k in Object.keys(map)>` is found and the `in` of an `x in y`
+ * written inside a call's arguments is not.
+ * @param {string} source - The text to scan.
+ * @param {string} word - The keyword to find.
+ * @returns {number} The offset, or -1.
+ */
+function findTopLevelWord(source, word) {
+  let quote = null;
+  let depth = 0;
+
+  for (let i = 0; i &lt; source.length; i++) {
+    const ch = source[i];
+
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') {
+      depth++;
+      continue;
+    }
+    if (ch === ')' || ch === ']' || ch === '}') {
+      if (depth > 0) depth--;
+      continue;
+    }
+    if (depth !== 0) continue;
+
+    if (source.startsWith(word, i)) {
+      const before = i === 0 ? ' ' : source[i - 1];
+      const after = source[i + word.length] === undefined ? ' ' : source[i + word.length];
+      if (/\s/.test(before) &amp;&amp; /\s/.test(after)) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
+/**
+ * Strips a trailing `key="..."` clause from a `&lt;@for>` header.
+ * @param {string} header - The header text after the list expression.
+ * @returns {{list: string, key: string|null}} The list source and the key source.
+ */
+function splitListAndKey(header) {
+  const match = header.match(/\skey\s*=\s*("([^"]*)"|'([^']*)')\s*$/);
+  if (!match) {
+    return { list: header.trim(), key: null };
+  }
+  const key = match[2] !== undefined ? match[2] : match[3];
+  return { list: header.slice(0, match.index).trim(), key: key.trim() || null };
+}
+
+/**
+ * Parses a `&lt;@for>` header into its parts.
+ *
+ * Two binding forms, both pre-existing and both preserved exactly:
+ *
+ * - `item in list` binds each element to `item`.
+ * - `[a, b] in pairs` destructures each *element* -- which is an array -- into
+ *   `a` and `b`. It does not mean `(item, index)`, however much it looks like
+ *   the JavaScript it resembles.
+ *
+ * Either form also binds `index` implicitly, which is how the loop index has
+ * always been reached. Both facts are load-bearing for existing applications,
+ * so they are read out of the previous implementation rather than redesigned
+ * here; changing either belongs in its own change, with its own migration.
+ * @param {string} header - The raw header text.
+ * @returns {{item: string|null, destructure: string[]|null, list: string, key: string|null}} The parts.
+ * @throws {IRRefusal} When the header is not a loop header.
+ */
+export function parseForHeader(header) {
+  const source = (header || '').trim();
+  const inAt = findTopLevelWord(source, 'in');
+  if (inAt === -1) {
+    throw new IRRefusal(RefusalReason.MALFORMED, `&lt;@for ${source}> has no "in" clause`);
+  }
+
+  const binding = source.slice(0, inAt).trim();
+  const { list, key } = splitListAndKey(source.slice(inAt + 2));
+
+  if (list === '') {
+    throw new IRRefusal(RefusalReason.MALFORMED, `&lt;@for ${source}> iterates nothing`);
+  }
+
+  const destructured = binding.match(/^\[\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*)\s*)?\]$/);
+  if (destructured) {
+    return {
+      item: null,
+      destructure: destructured[2] ? [destructured[1], destructured[2]] : [destructured[1]],
+      list,
+      key,
+    };
+  }
+
+  if (!/^[A-Za-z_$][\w$]*$/.test(binding)) {
+    throw new IRRefusal(RefusalReason.MALFORMED, `&lt;@for ${source}> does not bind a name`);
+  }
+  return { item: binding, destructure: null, list, key };
+}
+
+/**
+ * Parses an event attribute name into its event and modifiers.
+ * @param {string} name - The attribute name, including the leading `@`.
+ * @returns {{event: string, modifiers: string[]}} The parsed parts.
+ */
+function parseEventName(name) {
+  const [event, ...modifiers] = name.slice(1).split('.');
+  return { event, modifiers };
+}
+
+/**
+ * Reads a directive attribute's expression, with or without `{{ }}` around it.
+ *
+ * Both spellings are documented and both appear in the wild:
+ *
+ * ```html
+ * &lt;p data-ax-show="isOpen">
+ * &lt;p data-ax-style="{{ { fontWeight: bold ? '700' : '400' } }}">
+ * ```
+ *
+ * The braces are how an author writes an object literal without it looking
+ * like an attribute value, so they are stripped here rather than handed to the
+ * expression parser, which would read `{{` as the start of a block.
+ * @param {string} value - The attribute value as written.
+ * @returns {string} The expression source.
+ */
+function unwrapDirectiveValue(value) {
+  const segments = splitInterpolations(value);
+  if (segments.length === 1 &amp;&amp; segments[0].expr !== null) {
+    return segments[0].expr;
+  }
+  return value;
+}
+
+/**
+ * Builds an element's bindings and events from its attribute map.
+ * @param {object} node - The parsed HTML node.
+ * @returns {{attrs: object, bindings: object[], events: object[]}} The element parts.
+ * @throws {IRRefusal} When an attribute needs machinery the IR does not model.
+ */
+function buildAttributes(node) {
+  const source = node.attrs || {};
+  const attrs = {};
+  const bindings = [];
+  const events = [];
+
+  for (const [name, reason] of UNMODELLED_ATTRS) {
+    if (source[name] !== undefined) {
+      throw new IRRefusal(reason, `&lt;${node.tagName} ${name}>`);
+    }
+  }
+
+  for (const [name, value] of Object.entries(source)) {
+    if (name === 'data-ax-static') continue;
+
+    if (name.startsWith('@')) {
+      const { event, modifiers } = parseEventName(name);
+      events.push({ event, modifiers, expr: value });
+      continue;
+    }
+
+    // `:prop="expr"` binds a value; `:[expr]="v"` binds an attribute *name*,
+    // which has no fixed attribute for a program to address.
+    if (name.startsWith(':')) {
+      if (name.includes('[')) {
+        throw new IRRefusal(RefusalReason.DYNAMIC_ATTR, `&lt;${node.tagName} ${name}>`);
+      }
+      bindings.push({ type: BindingKind.ATTR, name: name.slice(1), expr: value });
+      continue;
+    }
+
+    if (hasInterpolation(name)) {
+      throw new IRRefusal(RefusalReason.DYNAMIC_ATTR, `&lt;${node.tagName}> interpolated attribute name`);
+    }
+
+    const directive = DIRECTIVE_BINDINGS.get(name);
+    if (directive) {
+      bindings.push({ type: directive, name, expr: unwrapDirectiveValue(value) });
+      continue;
+    }
+
+    if (!hasInterpolation(value)) {
+      attrs[name] = value;
+      continue;
+    }
+
+    const segments = splitInterpolations(value);
+    if (segments.length === 1 &amp;&amp; segments[0].expr !== null) {
+      // One whole expression, so the value keeps its type: a boolean attribute
+      // can be toggled and null can remove the attribute, neither of which
+      // survives concatenation into a string.
+      bindings.push({
+        type: isBooleanAttribute(name) ? BindingKind.BOOL : BindingKind.ATTR,
+        name,
+        expr: segments[0].expr,
+      });
+    } else {
+      bindings.push({
+        type: BindingKind.ATTR_PARTS,
+        name,
+        parts: segments.map((segment) => (segment.expr === null ? segment.value : { expr: segment.expr })),
+      });
+    }
+  }
+
+  return { attrs, bindings, events };
+}
+
+/**
+ * Builds the props of a child component from its attribute map.
+ * @param {object} node - The parsed HTML node.
+ * @returns {object[]} Prop descriptors.
+ */
+function buildProps(node) {
+  const props = [];
+  for (const [name, value] of Object.entries(node.attrs || {})) {
+    if (name.startsWith('@')) {
+      props.push({ name, kind: 'event', expr: value });
+      continue;
+    }
+    const bound = name.startsWith(':');
+    const propName = bound ? name.slice(1) : name;
+    if (bound) {
+      props.push({ name: propName, kind: 'bound', expr: value });
+    } else if (hasInterpolation(value)) {
+      const segments = splitInterpolations(value);
+      if (segments.length === 1 &amp;&amp; segments[0].expr !== null) {
+        props.push({ name: propName, kind: 'bound', expr: segments[0].expr });
+      } else {
+        props.push({
+          name: propName,
+          kind: 'parts',
+          parts: segments.map((s) => (s.expr === null ? s.value : { expr: s.expr })),
+        });
+      }
+    } else {
+      props.push({ name: propName, kind: 'static', value });
+    }
+  }
+  return props;
+}
+
+/**
+ * Whether a tag name refers to a child component rather than an element.
+ * @param {string} tag - The tag name as written.
+ * @returns {boolean} True for a PascalCase reference.
+ */
+function isComponentTag(tag) {
+  return /^[A-Z][A-Za-z0-9_]*$/.test(tag);
+}
+
+/**
+ * Rejects a conditional header that the tag scan cut in half.
+ *
+ * `&lt;@if count > 3>` cannot be read unambiguously: the `>` that means "greater
+ * than" and the `>` that means "end of tag" are the same character, and nothing
+ * in the surrounding text distinguishes them. Bracket depth rescues
+ * `&lt;@for x in xs.filter(a => a.n > 1)>` because the comparison is inside a call;
+ * a bare comparison has nothing to hide behind.
+ *
+ * So the compiler does not guess. A header that was truncated leaves the rest
+ * of the expression as the first text node of the branch body -- `" 3>"` above
+ * -- and that shape is what this detects. The author gets the parenthesised
+ * form, which the scanner reads correctly, rather than a condition that
+ * silently tests the wrong thing.
+ * @param {object} node - The parsed directive node.
+ * @param {string} test - The header text as scanned.
+ * @throws {IRRefusal} When the header was cut at a comparison.
+ */
+function assertHeaderNotTruncated(node, test) {
+  const first = (node.children || [])[0];
+  if (!first || first.type !== 'text') return;
+
+  // A leftover fragment reaches the next `>` without opening an element first.
+  const leftover = first.content.match(/^([^&lt;]*?)>/);
+  if (!leftover) return;
+
+  const tail = leftover[1].trim();
+  if (tail === '') return;
+
+  throw new IRRefusal(
+    RefusalReason.MALFORMED,
+    `&lt;${node.tagName} ${test}> was cut at a ">" -- write it as ` +
+      `&lt;${node.tagName} (${test} > ${tail})> so the comparison is inside brackets`,
+  );
+}
+
+/**
+ * Collects an `&lt;@if>` chain starting at `index`, consuming its continuations.
+ * @param {object[]} siblings - The sibling list being walked.
+ * @param {number} index - Index of the `&lt;@if>` node.
+ * @param {function(object[]): object[]} buildChildren - Recursive child builder.
+ * @returns {{node: object, next: number}} The conditional node and the index to resume at.
+ */
+function buildConditional(siblings, index, buildChildren) {
+  const branches = [];
+  let i = index;
+  let sawElse = false;
+
+  while (i &lt; siblings.length) {
+    const node = siblings[i];
+
+    // Whitespace between `&lt;/@if>` and `&lt;@elseif>` is formatting, not content.
+    // Breaking the chain on it would make an author's indentation decide
+    // whether their `&lt;@else>` belongs to the `&lt;@if>` above it.
+    if (node &amp;&amp; node.type === 'text' &amp;&amp; node.content.trim() === '' &amp;&amp; branches.length > 0) {
+      const following = siblings[i + 1];
+      const followingTag = following &amp;&amp; following.type === 'element' ? (following.tagName || '').toLowerCase() : '';
+      if (followingTag === '@elseif' || followingTag === '@elif' || followingTag === '@else') {
+        i++;
+        continue;
+      }
+      break;
+    }
+
+    if (!node || node.type !== 'element') break;
+    const tag = (node.tagName || '').toLowerCase();
+
+    if (tag === '@if' &amp;&amp; i !== index) break;
+
+    if (tag === '@if' || tag === '@elseif' || tag === '@elif') {
+      if (sawElse) {
+        throw new IRRefusal(RefusalReason.MALFORMED, `&lt;${node.tagName}> follows &lt;@else>`);
+      }
+      const test = (node.rawAttrs || '').trim();
+      if (test === '') {
+        throw new IRRefusal(RefusalReason.MALFORMED, `&lt;${node.tagName}> has no condition`);
+      }
+      assertHeaderNotTruncated(node, test);
+      branches.push({ test, body: fragment(buildChildren(node.children || [])) });
+      i++;
+      continue;
+    }
+
+    if (tag === '@else') {
+      if (sawElse) {
+        throw new IRRefusal(RefusalReason.MALFORMED, 'two &lt;@else> branches in one chain');
+      }
+      sawElse = true;
+      branches.push({ test: null, body: fragment(buildChildren(node.children || [])) });
+      i++;
+      continue;
+    }
+
+    break;
+  }
+
+  return { node: conditional(branches), next: i };
+}
+
+/**
+ * Builds an iteration node from a `&lt;@for>` element.
+ * @param {object} node - The parsed `&lt;@for>` node.
+ * @param {function(object[]): object[]} buildChildren - Recursive child builder.
+ * @returns {object} The iteration node.
+ */
+function buildIteration(node, buildChildren) {
+  const parts = parseForHeader(node.rawAttrs);
+
+  const body = [];
+  let empty = null;
+  for (const child of node.children || []) {
+    if (child.type === 'element' &amp;&amp; (child.tagName || '').toLowerCase() === '@empty') {
+      if (empty) {
+        throw new IRRefusal(RefusalReason.MALFORMED, 'two &lt;@empty> blocks in one &lt;@for>');
+      }
+      empty = fragment(buildChildren(child.children || []));
+      continue;
+    }
+    body.push(child);
+  }
+
+  return iteration({
+    list: parts.list,
+    item: parts.item,
+    destructure: parts.destructure,
+    key: parts.key,
+    body: fragment(buildChildren(body)),
+    empty,
+  });
+}
+
+/**
+ * Builds a deferred block from a `&lt;@defer>` element.
+ *
+ * `&lt;@placeholder>` is a sibling of the deferred content rather than a wrapper
+ * around it, so it is separated out here the same way `&lt;@empty>` is separated
+ * from a loop body.
+ * @param {object} node - The parsed `&lt;@defer>` node.
+ * @param {string} when - The resolved trigger.
+ * @param {function(object[]): object[]} buildChildren - Recursive child builder.
+ * @returns {object} The defer node.
+ */
+function buildDefer(node, when, buildChildren) {
+  const body = [];
+  let placeholder = null;
+
+  for (const child of node.children || []) {
+    if (child.type === 'element' &amp;&amp; (child.tagName || '').toLowerCase() === '@placeholder') {
+      if (placeholder) {
+        throw new IRRefusal(RefusalReason.MALFORMED, 'two &lt;@placeholder> blocks in one &lt;@defer>');
+      }
+      placeholder = fragment(buildChildren(child.children || []));
+      continue;
+    }
+    body.push(child);
+  }
+
+  return deferred(when, fragment(buildChildren(body)), placeholder);
+}
+
+/**
+ * Builds the IR for a template.
+ * @param {string} template - The template source, before directive rewriting.
+ * @param {object} [options] - Build options.
+ * @param {string[]} [options.voidTags] - Project-specific void tag names.
+ * @returns {{ir: object|null, refusal: {reason: string, detail: string}|null}}
+ *   The root fragment, or the reason the template could not be represented.
+ */
+export function buildTemplateIR(template, options = {}) {
+  if (typeof template !== 'string' || template.trim() === '') {
+    return { ir: null, refusal: { reason: RefusalReason.MALFORMED, detail: 'empty template' } };
+  }
+
+  const voidTags = options.voidTags || [];
+  let parsed;
+  try {
+    parsed = parseHTML(template, voidTags);
+  } catch (error) {
+    return { ir: null, refusal: { reason: RefusalReason.MALFORMED, detail: `template did not parse: ${error.message}` } };
+  }
+
+  /**
+   * Builds IR for a sibling list.
+   * @param {object[]} siblings - Parsed sibling nodes.
+   * @returns {object[]} IR nodes.
+   */
+  function buildChildren(siblings) {
+    const out = [];
+
+    for (let i = 0; i &lt; siblings.length; i++) {
+      const node = siblings[i];
+
+      if (node.type === 'text') {
+        for (const segment of splitInterpolations(node.content)) {
+          if (segment.expr === null) {
+            if (segment.value !== '') out.push(text(segment.value));
+          } else {
+            out.push(interpolation(segment.expr, segment.raw));
+          }
+        }
+        continue;
+      }
+
+      if (node.type === 'comment') {
+        if (hasInterpolation(node.content)) {
+          throw new IRRefusal(RefusalReason.UNKNOWN_DIRECTIVE, 'an interpolation inside an HTML comment');
+        }
+        out.push(comment(node.content));
+        continue;
+      }
+
+      const tag = (node.tagName || '').toLowerCase();
+
+      const unmodelled = UNMODELLED_TAGS.get(tag);
+      if (unmodelled) {
+        throw new IRRefusal(unmodelled, `&lt;${node.tagName}>`);
+      }
+
+      if (tag === '@if') {
+        const built = buildConditional(siblings, i, buildChildren);
+        out.push(built.node);
+        i = built.next - 1;
+        continue;
+      }
+
+      if (tag === '@elseif' || tag === '@elif' || tag === '@else') {
+        throw new IRRefusal(RefusalReason.MALFORMED, `&lt;${node.tagName}> without a preceding &lt;@if>`);
+      }
+
+      if (tag === '@for') {
+        out.push(buildIteration(node, buildChildren));
+        continue;
+      }
+
+      if (tag === '@defer') {
+        // `when` is the documented spelling; a bare header is accepted too so
+        // `&lt;@defer visible>` reads the way the other directives do.
+        const when = ((node.attrs &amp;&amp; node.attrs.when) || (node.rawAttrs || '').trim() || 'idle').trim();
+        out.push(buildDefer(node, when, buildChildren));
+        continue;
+      }
+
+      if (tag === '@empty') {
+        throw new IRRefusal(RefusalReason.MALFORMED, '&lt;@empty> outside a &lt;@for>');
+      }
+
+      if (tag === '@placeholder') {
+        throw new IRRefusal(RefusalReason.MALFORMED, '&lt;@placeholder> outside a &lt;@defer>');
+      }
+
+      if (tag.startsWith('@')) {
+        throw new IRRefusal(RefusalReason.UNKNOWN_DIRECTIVE, `&lt;${node.tagName}>`);
+      }
+
+      if (tag === 'slot') {
+        const name = (node.attrs &amp;&amp; node.attrs.name) || 'default';
+        const fallbackChildren = buildChildren(node.children || []);
+        out.push(slot(name, fallbackChildren.length > 0 ? fragment(fallbackChildren) : null));
+        continue;
+      }
+
+      if (isComponentTag(node.tagName)) {
+        out.push(
+          component(node.tagName, {
+            props: buildProps(node),
+            children: buildChildren(node.children || []),
+          }),
+        );
+        continue;
+      }
+
+      const { attrs, bindings, events } = buildAttributes(node);
+      out.push(
+        element(node.tagName, {
+          attrs,
+          bindings,
+          events,
+          children: buildChildren(node.children || []),
+          selfClosing: node.isSelfClosing === true,
+          isStatic: node.attrs &amp;&amp; node.attrs['data-ax-static'] !== undefined,
+        }),
+      );
+    }
+
+    return out;
+  }
+
+  try {
+    return { ir: fragment(buildChildren(parsed)), refusal: null };
+  } catch (error) {
+    if (error instanceof IRRefusal) {
+      return { ir: null, refusal: { reason: error.reason, detail: error.detail } };
+    }
+    throw error;
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-lib_bundler.html">lib/bundler</a></li><li><a href="module-lib_bundler_emit.html">lib/bundler/emit</a></li><li><a href="module-lib_bundler_graph.html">lib/bundler/graph</a></li><li><a href="module-lib_bundler_minify.html">lib/bundler/minify</a></li><li><a href="module-lib_bundler_parseModule.html">lib/bundler/parseModule</a></li><li><a href="module-lib_bundler_resolve.html">lib/bundler/resolve</a></li><li><a href="module-lib_bundler_scanner.html">lib/bundler/scanner</a></li><li><a href="module-lib_bundler_treeshake.html">lib/bundler/treeshake</a></li><li><a href="module-lib_compiler_atlas_AppModel.html">lib/compiler/atlas/AppModel</a></li><li><a href="module-lib_compiler_atlas_build.html">lib/compiler/atlas/build</a></li><li><a href="module-lib_compiler_atlas_cache.html">lib/compiler/atlas/cache</a></li><li><a href="module-lib_compiler_atlas_diagnostics.html">lib/compiler/atlas/diagnostics</a></li><li><a href="module-lib_compiler_atlas_emit.html">lib/compiler/atlas/emit</a></li><li><a href="module-lib_compiler_atlas_query.html">lib/compiler/atlas/query</a></li><li><a href="module-lib_compiler_atlas_resolve.html">lib/compiler/atlas/resolve</a></li><li><a href="module-lib_compiler_atlas_routes.html">lib/compiler/atlas/routes</a></li><li><a href="module-lib_compiler_atlas_source.html">lib/compiler/atlas/source</a></li><li><a href="module-lib_compiler_bundle_validate.html">lib/compiler/bundle/validate</a></li><li><a href="module-lib_compiler_codegen_actions.html">lib/compiler/codegen/actions</a></li><li><a href="module-lib_compiler_codegen_collect.html">lib/compiler/codegen/collect</a></li><li><a href="module-lib_compiler_codegen_expression.html">lib/compiler/codegen/expression</a></li><li><a href="module-lib_compiler_codegen_table.html">lib/compiler/codegen/table</a></li><li><a href="module-lib_compiler_ir_build.html">lib/compiler/ir/build</a></li><li><a href="module-lib_compiler_ir_lower.html">lib/compiler/ir/lower</a></li><li><a href="module-lib_compiler_ir_nodes.html">lib/compiler/ir/nodes</a></li><li><a href="module-lib_compiler_modules.html">lib/compiler/modules</a></li><li><a href="module-lib_compiler_parser_declarations.html">lib/compiler/parser/declarations</a></li><li><a href="module-lib_compiler_parser_htmlTree.html">lib/compiler/parser/htmlTree</a></li><li><a href="module-lib_compiler_parser_tokenizer.html">lib/compiler/parser/tokenizer</a></li><li><a href="module-lib_compiler_render_program.html">lib/compiler/render/program</a></li><li><a href="module-lib_compiler_rewind_diagnostics.html">lib/compiler/rewind/diagnostics</a></li><li><a href="module-lib_compiler_rewind_effects.html">lib/compiler/rewind/effects</a></li><li><a href="module-lib_compiler_rewind_writeSet.html">lib/compiler/rewind/writeSet</a></li><li><a href="module-lib_compiler_sourceMapTrace.html">lib/compiler/sourceMapTrace</a></li><li><a href="module-lib_compiler_templateEvents.html">lib/compiler/templateEvents</a></li><li><a href="module-lib_compiler_validateExpressions.html">lib/compiler/validateExpressions</a></li><li><a href="module-lib_core_expression_compile.html">lib/core/expression/compile</a></li><li><a href="module-lib_core_expression_evaluator.html">lib/core/expression/evaluator</a></li><li><a href="module-lib_core_expression_fallback.html">lib/core/expression/fallback</a></li><li><a href="module-lib_core_expression_interpreter.html">lib/core/expression/interpreter</a></li><li><a href="module-lib_core_expression_ops.html">lib/core/expression/ops</a></li><li><a href="module-lib_core_expression_parser.html">lib/core/expression/parser</a></li><li><a href="module-lib_core_index.html">lib/core/index</a></li><li><a href="module-lib_core_reactive_journal.html">lib/core/reactive/journal</a></li><li><a href="module-lib_core_reactive_scopeProxy.html">lib/core/reactive/scopeProxy</a></li><li><a href="module-lib_core_reactive_symbols.html">lib/core/reactive/symbols</a></li><li><a href="module-lib_core_renderer_bindingScope.html">lib/core/renderer/bindingScope</a></li><li><a href="module-lib_core_renderer_installStringRenderer.html">lib/core/renderer/installStringRenderer</a></li><li><a href="module-lib_core_renderer_program_CompiledTemplate.html">lib/core/renderer/program/CompiledTemplate</a></li><li><a href="module-lib_core_renderer_program_TemplateInstance.html">lib/core/renderer/program/TemplateInstance</a></li><li><a href="module-lib_core_renderer_program_bindings.html">lib/core/renderer/program/bindings</a></li><li><a href="module-lib_core_renderer_program_blocks.html">lib/core/renderer/program/blocks</a></li><li><a href="module-lib_core_renderer_stringRenderer.html">lib/core/renderer/stringRenderer</a></li><li><a href="module-lib_core_runtime_AvenxGuard.html">lib/core/runtime/AvenxGuard</a></li><li><a href="module-lib_core_runtime_ComponentScope.html">lib/core/runtime/ComponentScope</a></li><li><a href="module-lib_core_runtime_atomic.html">lib/core/runtime/atomic</a></li><li><a href="module-lib_core_runtime_builtins.html">lib/core/runtime/builtins</a></li><li><a href="module-lib_core_runtime_installVirtualList.html">lib/core/runtime/installVirtualList</a></li><li><a href="module-lib_core_security_urlPolicy.html">lib/core/security/urlPolicy</a></li><li><a href="module-lib_core_testing.html">lib/core/testing</a></li><li><a href="module-lib_core_tooling.html">lib/core/tooling</a></li><li><a href="module-lib_core_tooling_loadComponent.html">lib/core/tooling/loadComponent</a></li><li><a href="module-lib_core_trace_capture.html">lib/core/trace/capture</a></li><li><a href="module-lib_core_trace_contracts.html">lib/core/trace/contracts</a></li><li><a href="module-lib_core_trace_derived.html">lib/core/trace/derived</a></li><li><a href="module-lib_core_trace_devtools.html">lib/core/trace/devtools</a></li><li><a href="module-lib_core_trace_dom.html">lib/core/trace/dom</a></li><li><a href="module-lib_core_trace_exportTest.html">lib/core/trace/exportTest</a></li><li><a href="module-lib_core_trace_format.html">lib/core/trace/format</a></li><li><a href="module-lib_core_trace_globals.html">lib/core/trace/globals</a></li><li><a href="module-lib_core_trace_reactive.html">lib/core/trace/reactive</a></li><li><a href="module-lib_core_trace_recorder.html">lib/core/trace/recorder</a></li><li><a href="module-lib_core_trace_redact.html">lib/core/trace/redact</a></li><li><a href="module-lib_core_trace_replay.html">lib/core/trace/replay</a></li><li><a href="module-lib_core_trace_resource.html">lib/core/trace/resource</a></li><li><a href="module-lib_core_trace_schema.html">lib/core/trace/schema</a></li><li><a href="module-lib_core_trace_store.html">lib/core/trace/store</a></li><li><a href="module-lib_core_trace_tracer.html">lib/core/trace/tracer</a></li><li><a href="module-lib_core_trace_transaction.html">lib/core/trace/transaction</a></li></ul><h3>Classes</h3><ul><li><a href="AvenxApp.html">AvenxApp</a></li><li><a href="AvenxCLI.html">AvenxCLI</a></li><li><a href="AvenxCompiler.html">AvenxCompiler</a></li><li><a href="AvenxComponent.html">AvenxComponent</a></li><li><a href="AvenxError.html">AvenxError</a></li><li><a href="AvenxLogger.html">AvenxLogger</a></li><li><a href="AvenxMock.html">AvenxMock</a></li><li><a href="AvenxPage.html">AvenxPage</a></li><li><a href="AvenxRouter.html">AvenxRouter</a></li><li><a href="AvenxSandbox.html">AvenxSandbox</a></li><li><a href="AvenxWatcher.html">AvenxWatcher</a></li><li><a href="BrowserNavigationDelegate.html">BrowserNavigationDelegate</a></li><li><a href="BuildError.html">BuildError</a></li><li><a href="CompilerError.html">CompilerError</a></li><li><a href="ComponentParser.html">ComponentParser</a></li><li><a href="ComputedRegistry.html">ComputedRegistry</a></li><li><a href="ContractValidator.html">ContractValidator</a></li><li><a href="DeadlockManager.html">DeadlockManager</a></li><li><a href="DeferManager.html">DeferManager</a></li><li><a href="DisposalScope.html">DisposalScope</a></li><li><a href="DomPatcher.html">DomPatcher</a></li><li><a href="DynamicEvaluator.html">DynamicEvaluator</a></li><li><a href="EventBinder.html">EventBinder</a></li><li><a href="EventExecutor.html">EventExecutor</a></li><li><a href="ExpressionParser.html">ExpressionParser</a></li><li><a href="HtmlDiff.html">HtmlDiff</a></li><li><a href="HtmlEscaper.html">HtmlEscaper</a></li><li><a href="LifecycleManager.html">LifecycleManager</a></li><li><a href="ListManager.html">ListManager</a></li><li><a href="LruCache.html">LruCache</a></li><li><a href="MemoryNavigationDelegate.html">MemoryNavigationDelegate</a></li><li><a href="NavigationDelegate.html">NavigationDelegate</a></li><li><a href="ProxyHandlerFactory.html">ProxyHandlerFactory</a></li><li><a href="Resource.html">Resource</a></li><li><a href="RouteMatcher.html">RouteMatcher</a></li><li><a href="SafeHtml.html">SafeHtml</a></li><li><a href="Sanitizer.html">Sanitizer</a></li><li><a href="StateFactory.html">StateFactory</a></li><li><a href="StyleCompilerError.html">StyleCompilerError</a></li><li><a href="StyleMountManager.html">StyleMountManager</a></li><li><a href="StyleProcessor.html">StyleProcessor</a></li><li><a href="TemplateRenderer.html">TemplateRenderer</a></li><li><a href="TemplateValidationError.html">TemplateValidationError</a></li><li><a href="VirtualList.html">VirtualList</a></li><li><a href="module-lib_bundler_emit.EmitError.html">EmitError</a></li><li><a href="module-lib_bundler_graph.BindingError.html">BindingError</a></li><li><a href="module-lib_bundler_graph.DynamicImportError.html">DynamicImportError</a></li><li><a href="module-lib_bundler_graph.ModuleGraph.html">ModuleGraph</a></li><li><a href="module-lib_bundler_parseModule.ModuleParseError.html">ModuleParseError</a></li><li><a href="module-lib_bundler_resolve.ResolveError.html">ResolveError</a></li><li><a href="module-lib_bundler_resolve.Resolver.html">Resolver</a></li><li><a href="module-lib_bundler_scanner.CodeMask.html">CodeMask</a></li><li><a href="module-lib_compiler_atlas_AppModel.AppModel.html">AppModel</a></li><li><a href="module-lib_compiler_codegen_actions-Scope.html">Scope</a></li><li><a href="module-lib_compiler_codegen_expression.ExpressionCodegenError.html">ExpressionCodegenError</a></li><li><a href="module-lib_compiler_codegen_expression-Bound.html">Bound</a></li><li><a href="module-lib_compiler_ir_lower-BlockBuilder.html">BlockBuilder</a></li><li><a href="module-lib_compiler_ir_lower-Interner.html">Interner</a></li><li><a href="module-lib_compiler_ir_nodes.IRRefusal.html">IRRefusal</a></li><li><a href="module-lib_compiler_parser_htmlTree.HTMLNode.html">HTMLNode</a></li><li><a href="module-lib_core_expression_evaluator-Frame.html">Frame</a></li><li><a href="module-lib_core_expression_parser.ExpressionParseError.html">ExpressionParseError</a></li><li><a href="module-lib_core_expression_parser-Parser.html">Parser</a></li><li><a href="module-lib_core_reactive_journal.JournalFrame.html">JournalFrame</a></li><li><a href="module-lib_core_reactive_journal-Journal.html">Journal</a></li><li><a href="module-lib_core_renderer_program_CompiledTemplate.CompiledTemplate.html">CompiledTemplate</a></li><li><a href="module-lib_core_renderer_program_TemplateInstance.TemplateInstance.html">TemplateInstance</a></li><li><a href="module-lib_core_renderer_program_blocks.DeferBinding.html">DeferBinding</a></li><li><a href="module-lib_core_renderer_program_blocks.ForBinding.html">ForBinding</a></li><li><a href="module-lib_core_renderer_program_blocks.IfBinding.html">IfBinding</a></li><li><a href="module-lib_core_renderer_program_blocks.RangeBinding.html">RangeBinding</a></li><li><a href="module-lib_core_renderer_program_blocks.SlotBinding.html">SlotBinding</a></li><li><a href="module-lib_core_renderer_program_blocks-BlockRange.html">BlockRange</a></li><li><a href="module-lib_core_runtime_AvenxGuard.AvenxGuard.html">AvenxGuard</a></li><li><a href="module-lib_core_runtime_AvenxGuard.GuardContext.html">GuardContext</a></li><li><a href="module-lib_core_runtime_ComponentScope.ComponentScope.html">ComponentScope</a></li><li><a href="module-lib_core_trace_recorder.TraceRecorder.html">TraceRecorder</a></li><li><a href="module-lib_core_trace_redact.Redactor.html">Redactor</a></li><li><a href="module-lib_core_trace_tracer-Tracer.html">Tracer</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ALLOWED_GLOBALS">ALLOWED_GLOBALS</a></li><li><a href="global.html#ATOMIC_VALUE">ATOMIC_VALUE</a></li><li><a href="global.html#AvenxErrorCodes">AvenxErrorCodes</a></li><li><a href="global.html#AvenxErrorMessages">AvenxErrorMessages</a></li><li><a href="global.html#BOOLEAN_ATTRIBUTES">BOOLEAN_ATTRIBUTES</a></li><li><a href="global.html#BUILTIN_COMPONENT_MODULES">BUILTIN_COMPONENT_MODULES</a></li><li><a href="global.html#BUILTIN_TAGS">BUILTIN_TAGS</a></li><li><a href="global.html#BUNDLE_SIZE_WARNING_THRESHOLD_KB">BUNDLE_SIZE_WARNING_THRESHOLD_KB</a></li><li><a href="global.html#CONFIG_SCHEMA">CONFIG_SCHEMA</a></li><li><a href="global.html#CONFLICT_POLICIES">CONFLICT_POLICIES</a></li><li><a href="global.html#DEFAULT_ALLOWED_ATTRIBUTES">DEFAULT_ALLOWED_ATTRIBUTES</a></li><li><a href="global.html#DEFAULT_ALLOWED_TAGS">DEFAULT_ALLOWED_TAGS</a></li><li><a href="global.html#DIAGNOSTIC_CATALOGUE">DIAGNOSTIC_CATALOGUE</a></li><li><a href="global.html#FUNCTION_CONSTRUCTORS">FUNCTION_CONSTRUCTORS</a></li><li><a href="global.html#INSTANCE_API_KEYS">INSTANCE_API_KEYS</a></li><li><a href="global.html#INVALID_URL_PROTOCOL">INVALID_URL_PROTOCOL</a></li><li><a href="global.html#ISOLATION_VIOLATION_PATTERNS">ISOLATION_VIOLATION_PATTERNS</a></li><li><a href="global.html#IS_BRIDGE">IS_BRIDGE</a></li><li><a href="global.html#KNOWN_ELEMENTS">KNOWN_ELEMENTS</a></li><li><a href="global.html#LIVE_REGION_ID">LIVE_REGION_ID</a></li><li><a href="global.html#MAX_TRACE_BYTES">MAX_TRACE_BYTES</a></li><li><a href="global.html#NAMESPACE_GLOBAL">NAMESPACE_GLOBAL</a></li><li><a href="global.html#PROTECTED_PROTOTYPES">PROTECTED_PROTOTYPES</a></li><li><a href="global.html#PUBLIC_GLOBALS">PUBLIC_GLOBALS</a></li><li><a href="global.html#RESERVED_KEYS">RESERVED_KEYS</a></li><li><a href="global.html#RUNTIME_SPECIFIER">RUNTIME_SPECIFIER</a></li><li><a href="global.html#SET_NAME">SET_NAME</a></li><li><a href="global.html#STRIP_CONTENT_TAGS">STRIP_CONTENT_TAGS</a></li><li><a href="global.html#URL_ATTRIBUTES">URL_ATTRIBUTES</a></li><li><a href="global.html#VOID_ELEMENTS">VOID_ELEMENTS</a></li><li><a href="global.html#abortIfGeneratedPathExists">abortIfGeneratedPathExists</a></li><li><a href="global.html#actionLabel">actionLabel</a></li><li><a href="global.html#activeScope">activeScope</a></li><li><a href="global.html#activeWatcher">activeWatcher</a></li><li><a href="global.html#age">age</a></li><li><a href="global.html#analyzeBridge">analyzeBridge</a></li><li><a href="global.html#analyzeBridgeFile">analyzeBridgeFile</a></li><li><a href="global.html#analyzeStats">analyzeStats</a></li><li><a href="global.html#announce">announce</a></li><li><a href="global.html#applyCustomHeaders">applyCustomHeaders</a></li><li><a href="global.html#arrowParameters">arrowParameters</a></li><li><a href="global.html#assertNotFunctionConstructor">assertNotFunctionConstructor</a></li><li><a href="global.html#assertNotProtectedPrototype">assertNotProtectedPrototype</a></li><li><a href="global.html#assertSnapshot">assertSnapshot</a></li><li><a href="global.html#attachRequestLogger">attachRequestLogger</a></li><li><a href="global.html#belongsToComponent">belongsToComponent</a></li><li><a href="global.html#blankComments">blankComments</a></li><li><a href="global.html#blue">blue</a></li><li><a href="global.html#bold">bold</a></li><li><a href="global.html#bridge">bridge</a></li><li><a href="global.html#bridgeBindingName">bridgeBindingName</a></li><li><a href="global.html#bridgeNameFromFile">bridgeNameFromFile</a></li><li><a href="global.html#buildAstScope">buildAstScope</a></li><li><a href="global.html#buildAtomicSpec">buildAtomicSpec</a></li><li><a href="global.html#buildEventNode">buildEventNode</a></li><li><a href="global.html#buildModel">buildModel</a></li><li><a href="global.html#buildProject">buildProject</a></li><li><a href="global.html#byJobId">byJobId</a></li><li><a href="global.html#checkGitStatus">checkGitStatus</a></li><li><a href="global.html#checkProject">checkProject</a></li><li><a href="global.html#classTokensEqual">classTokensEqual</a></li><li><a href="global.html#cleanProject">cleanProject</a></li><li><a href="global.html#cleanupParentMap">cleanupParentMap</a></li><li><a href="global.html#clearCausationTrace">clearCausationTrace</a></li><li><a href="global.html#cloneInitial">cloneInitial</a></li><li><a href="global.html#collectImportBindings">collectImportBindings</a></li><li><a href="global.html#collectLoopBindings">collectLoopBindings</a></li><li><a href="global.html#collectSemantics">collectSemantics</a></li><li><a href="global.html#collectUnknownKeys">collectUnknownKeys</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#componentNameFromFile">componentNameFromFile</a></li><li><a href="global.html#composeBundleSourceMap">composeBundleSourceMap</a></li><li><a href="global.html#configCache">configCache</a></li><li><a href="global.html#consoleTransport">consoleTransport</a></li><li><a href="global.html#containsSlot">containsSlot</a></li><li><a href="global.html#createDeepMockProxy">createDeepMockProxy</a></li><li><a href="global.html#createInterpolationRegex">createInterpolationRegex</a></li><li><a href="global.html#createNavigationDelegate">createNavigationDelegate</a></li><li><a href="global.html#createRecursiveWatcherFallback">createRecursiveWatcherFallback</a></li><li><a href="global.html#createSeverityFormatter">createSeverityFormatter</a></li><li><a href="global.html#cyan">cyan</a></li><li><a href="global.html#deadlockHandlers">deadlockHandlers</a></li><li><a href="global.html#declarationCache">declarationCache</a></li><li><a href="global.html#declaredMembers">declaredMembers</a></li><li><a href="global.html#defaultFormatter">defaultFormatter</a></li><li><a href="global.html#defineBridgeName">defineBridgeName</a></li><li><a href="global.html#depMap">depMap</a></li><li><a href="global.html#describe">describe</a></li><li><a href="global.html#destroyBridge">destroyBridge</a></li><li><a href="global.html#destroyComponent">destroyComponent</a></li><li><a href="global.html#destroyGuard">destroyGuard</a></li><li><a href="global.html#destroyPage">destroyPage</a></li><li><a href="global.html#detectColorSupport">detectColorSupport</a></li><li><a href="global.html#dim">dim</a></li><li><a href="global.html#edgeLabel">edgeLabel</a></li><li><a href="global.html#encodeMapping">encodeMapping</a></li><li><a href="global.html#encodeVLQ">encodeVLQ</a></li><li><a href="global.html#escapeAttrValue">escapeAttrValue</a></li><li><a href="global.html#escapeTemplateMarkers">escapeTemplateMarkers</a></li><li><a href="global.html#escapeText">escapeText</a></li><li><a href="global.html#executionHistory">executionHistory</a></li><li><a href="global.html#explainDiagnostic">explainDiagnostic</a></li><li><a href="global.html#extractCycleChain">extractCycleChain</a></li><li><a href="global.html#extractEmittedEvents">extractEmittedEvents</a></li><li><a href="global.html#extractLintableTemplate">extractLintableTemplate</a></li><li><a href="global.html#extractRawTemplate">extractRawTemplate</a></li><li><a href="global.html#extractSubscriptions">extractSubscriptions</a></li><li><a href="global.html#fail">fail</a></li><li><a href="global.html#failProcess">failProcess</a></li><li><a href="global.html#findBridgeImports">findBridgeImports</a></li><li><a href="global.html#findComponentSource">findComponentSource</a></li><li><a href="global.html#findDefinitionBrace">findDefinitionBrace</a></li><li><a href="global.html#findInvalidComponentTags">findInvalidComponentTags</a></li><li><a href="global.html#findProjectRoot">findProjectRoot</a></li><li><a href="global.html#findRegisteredComponents">findRegisteredComponents</a></li><li><a href="global.html#fireEvent">fireEvent</a></li><li><a href="global.html#flushDepth">flushDepth</a></li><li><a href="global.html#flushJobs">flushJobs</a></li><li><a href="global.html#flushPromises">flushPromises</a></li><li><a href="global.html#formatBytes">formatBytes</a></li><li><a href="global.html#formatCodeFrame">formatCodeFrame</a></li><li><a href="global.html#formatContextTag">formatContextTag</a></li><li><a href="global.html#formatHtmlStringFallback">formatHtmlStringFallback</a></li><li><a href="global.html#formatMessage">formatMessage</a></li><li><a href="global.html#formatNode">formatNode</a></li><li><a href="global.html#formatRequestLog">formatRequestLog</a></li><li><a href="global.html#formatStatusCode">formatStatusCode</a></li><li><a href="global.html#formatValue">formatValue</a></li><li><a href="global.html#generateBridge">generateBridge</a></li><li><a href="global.html#generateComponent">generateComponent</a></li><li><a href="global.html#generateDiff">generateDiff</a></li><li><a href="global.html#generateGuard">generateGuard</a></li><li><a href="global.html#generatePage">generatePage</a></li><li><a href="global.html#generateTemplateSourceMap">generateTemplateSourceMap</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getActiveCausationTrace">getActiveCausationTrace</a></li><li><a href="global.html#getAllFiles">getAllFiles</a></li><li><a href="global.html#getClosestKey">getClosestKey</a></li><li><a href="global.html#getComponentProfilingInfo">getComponentProfilingInfo</a></li><li><a href="global.html#getCustomVoidTags">getCustomVoidTags</a></li><li><a href="global.html#getDiagnostic">getDiagnostic</a></li><li><a href="global.html#getFieldName">getFieldName</a></li><li><a href="global.html#getHTML">getHTML</a></li><li><a href="global.html#getInitialHtml">getInitialHtml</a></li><li><a href="global.html#getInspectorData">getInspectorData</a></li><li><a href="global.html#getInspectorHtml">getInspectorHtml</a></li><li><a href="global.html#getLineAndColumn">getLineAndColumn</a></li><li><a href="global.html#getObsoleteSnapshots">getObsoleteSnapshots</a></li><li><a href="global.html#getOrCreateLiveRegion">getOrCreateLiveRegion</a></li><li><a href="global.html#getOwnPropertyDescriptor">getOwnPropertyDescriptor</a></li><li><a href="global.html#getPropertyPath">getPropertyPath</a></li><li><a href="global.html#getPrototypeOf">getPrototypeOf</a></li><li><a href="global.html#getSchedulerMaxFlushCount">getSchedulerMaxFlushCount</a></li><li><a href="global.html#getScope">getScope</a></li><li><a href="global.html#getSequence">getSequence</a></li><li><a href="global.html#getTimestamp">getTimestamp</a></li><li><a href="global.html#getTransitionDuration">getTransitionDuration</a></li><li><a href="global.html#gray">gray</a></li><li><a href="global.html#green">green</a></li><li><a href="global.html#handleDeadlock">handleDeadlock</a></li><li><a href="global.html#has">has</a></li><li><a href="global.html#hasDependentOnPath">hasDependentOnPath</a></li><li><a href="global.html#hasDirectivesHelper">hasDirectivesHelper</a></li><li><a href="global.html#html">html</a></li><li><a href="global.html#initInspector">initInspector</a></li><li><a href="global.html#initProject">initProject</a></li><li><a href="global.html#interpolateEnv">interpolateEnv</a></li><li><a href="global.html#isBooleanAttribute">isBooleanAttribute</a></li><li><a href="global.html#isBridge">isBridge</a></li><li><a href="global.html#isColorEnabled">isColorEnabled</a></li><li><a href="global.html#isDebugReactivityEnabled">isDebugReactivityEnabled</a></li><li><a href="global.html#isDeniedProjectPath">isDeniedProjectPath</a></li><li><a href="global.html#isInsideRoot">isInsideRoot</a></li><li><a href="global.html#isReactive">isReactive</a></li><li><a href="global.html#isReactiveTarget">isReactiveTarget</a></li><li><a href="global.html#isRestrictedGlobal">isRestrictedGlobal</a></li><li><a href="global.html#isSafeUrl">isSafeUrl</a></li><li><a href="global.html#isStaticNode">isStaticNode</a></li><li><a href="global.html#isUnused">isUnused</a></li><li><a href="global.html#jobExecutionCounts">jobExecutionCounts</a></li><li><a href="global.html#levenshtein">levenshtein</a></li><li><a href="global.html#listenWithPortFallback">listenWithPortFallback</a></li><li><a href="global.html#loadAvenxConfig">loadAvenxConfig</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#loadEnv">loadEnv</a></li><li><a href="global.html#loadSidecar">loadSidecar</a></li><li><a href="global.html#manageFocus">manageFocus</a></li><li><a href="global.html#markRaw">markRaw</a></li><li><a href="global.html#mask">mask</a></li><li><a href="global.html#maskSecret">maskSecret</a></li><li><a href="global.html#maxFlushCount">maxFlushCount</a></li><li><a href="global.html#memberBodySpan">memberBodySpan</a></li><li><a href="global.html#memberParams">memberParams</a></li><li><a href="global.html#mountTestComponent">mountTestComponent</a></li><li><a href="global.html#nextTick">nextTick</a></li><li><a href="global.html#normalizeCode">normalizeCode</a></li><li><a href="global.html#numericFlag">numericFlag</a></li><li><a href="global.html#onSchedulerDeadlock">onSchedulerDeadlock</a></li><li><a href="global.html#onScopeDispose">onScopeDispose</a></li><li><a href="global.html#openBrowser">openBrowser</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parentMap">parentMap</a></li><li><a href="global.html#parseDiagnostic">parseDiagnostic</a></li><li><a href="global.html#parseEnv">parseEnv</a></li><li><a href="global.html#parseImports">parseImports</a></li><li><a href="global.html#parseMember">parseMember</a></li><li><a href="global.html#parseName">parseName</a></li><li><a href="global.html#parseObjectMembers">parseObjectMembers</a></li><li><a href="global.html#parseValidationRules">parseValidationRules</a></li><li><a href="global.html#parserInstance">parserInstance</a></li><li><a href="global.html#popWatcher">popWatcher</a></li><li><a href="global.html#positional">positional</a></li><li><a href="global.html#printCheck">printCheck</a></li><li><a href="global.html#printHelp">printHelp</a></li><li><a href="global.html#printNoTraces">printNoTraces</a></li><li><a href="global.html#printTree">printTree</a></li><li><a href="global.html#printUnresolved">printUnresolved</a></li><li><a href="global.html#processBindDirectives">processBindDirectives</a></li><li><a href="global.html#profile">profile</a></li><li><a href="global.html#promptQuestion">promptQuestion</a></li><li><a href="global.html#pushWatcher">pushWatcher</a></li><li><a href="global.html#queueFlush">queueFlush</a></li><li><a href="global.html#queueFlushCallback">queueFlushCallback</a></li><li><a href="global.html#queueJob">queueJob</a></li><li><a href="global.html#queued">queued</a></li><li><a href="global.html#readDeclarations">readDeclarations</a></li><li><a href="global.html#readEnvFileMeta">readEnvFileMeta</a></li><li><a href="global.html#readTemplate">readTemplate</a></li><li><a href="global.html#red">red</a></li><li><a href="global.html#registerInMainApp">registerInMainApp</a></li><li><a href="global.html#replaceEnvVariables">replaceEnvVariables</a></li><li><a href="global.html#reportAmbiguous">reportAmbiguous</a></li><li><a href="global.html#reportFatal">reportFatal</a></li><li><a href="global.html#reportRebuildFailure">reportRebuildFailure</a></li><li><a href="global.html#reportWarning">reportWarning</a></li><li><a href="global.html#resetScheduler">resetScheduler</a></li><li><a href="global.html#resolveBridgeSpecifier">resolveBridgeSpecifier</a></li><li><a href="global.html#resolveCallingTestFile">resolveCallingTestFile</a></li><li><a href="global.html#resolveComponentsDir">resolveComponentsDir</a></li><li><a href="global.html#resolveDoctorRoot">resolveDoctorRoot</a></li><li><a href="global.html#resolveMode">resolveMode</a></li><li><a href="global.html#resolvePathAlias">resolvePathAlias</a></li><li><a href="global.html#resolveRequestPath">resolveRequestPath</a></li><li><a href="global.html#resourceBodies">resourceBodies</a></li><li><a href="global.html#runAtlas">runAtlas</a></li><li><a href="global.html#runCheckPass">runCheckPass</a></li><li><a href="global.html#runDoctor">runDoctor</a></li><li><a href="global.html#runEnv">runEnv</a></li><li><a href="global.html#runHook">runHook</a></li><li><a href="global.html#runInScope">runInScope</a></li><li><a href="global.html#runInspect">runInspect</a></li><li><a href="global.html#runQuery">runQuery</a></li><li><a href="global.html#runStats">runStats</a></li><li><a href="global.html#runTrace">runTrace</a></li><li><a href="global.html#runWizard">runWizard</a></li><li><a href="global.html#sanitizeUrlsIn">sanitizeUrlsIn</a></li><li><a href="global.html#scanObjectLiteral">scanObjectLiteral</a></li><li><a href="global.html#scopeCustomProperties">scopeCustomProperties</a></li><li><a href="global.html#scopeSelectorList">scopeSelectorList</a></li><li><a href="global.html#serializeSafe">serializeSafe</a></li><li><a href="global.html#serializeSnapshot">serializeSnapshot</a></li><li><a href="global.html#serveProject">serveProject</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setColorEnabled">setColorEnabled</a></li><li><a href="global.html#setDebugReactivity">setDebugReactivity</a></li><li><a href="global.html#setSchedulerMaxFlushCount">setSchedulerMaxFlushCount</a></li><li><a href="global.html#sharedParser">sharedParser</a></li><li><a href="global.html#shouldGenerateTest">shouldGenerateTest</a></li><li><a href="global.html#stripAnsi">stripAnsi</a></li><li><a href="global.html#stripCssComments">stripCssComments</a></li><li><a href="global.html#style">style</a></li><li><a href="global.html#styleMountManager">styleMountManager</a></li><li><a href="global.html#suggestCodes">suggestCodes</a></li><li><a href="global.html#suggestName">suggestName</a></li><li><a href="global.html#toPascalCase">toPascalCase</a></li><li><a href="global.html#toRaw">toRaw</a></li><li><a href="global.html#traceExport">traceExport</a></li><li><a href="global.html#traceList">traceList</a></li><li><a href="global.html#tracePrune">tracePrune</a></li><li><a href="global.html#traceView">traceView</a></li><li><a href="global.html#track">track</a></li><li><a href="global.html#transformDeepSelectors">transformDeepSelectors</a></li><li><a href="global.html#traverse">traverse</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#unescapeHtml">unescapeHtml</a></li><li><a href="global.html#unescapeTemplate">unescapeTemplate</a></li><li><a href="global.html#unescapeTemplateMarkers">unescapeTemplateMarkers</a></li><li><a href="global.html#unregisterFromMainApp">unregisterFromMainApp</a></li><li><a href="global.html#untracked">untracked</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#unwrapAtomic">unwrapAtomic</a></li><li><a href="global.html#updateValidationState">updateValidationState</a></li><li><a href="global.html#validateValue">validateValue</a></li><li><a href="global.html#wantsJson">wantsJson</a></li><li><a href="global.html#warnSanitized">warnSanitized</a></li><li><a href="global.html#warnSanitizedAttribute">warnSanitizedAttribute</a></li><li><a href="global.html#warnSanitizedTag">warnSanitizedTag</a></li><li><a href="global.html#watchDirectory">watchDirectory</a></li><li><a href="global.html#watchEffect">watchEffect</a></li><li><a href="global.html#watchProject">watchProject</a></li><li><a href="global.html#watcherStack">watcherStack</a></li><li><a href="global.html#wrapValue">wrapValue</a></li><li><a href="global.html#wrappedFunctionBodySpan">wrappedFunctionBodySpan</a></li><li><a href="global.html#yellow">yellow</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Sep 14 2026 19:12:12 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
